@@ -997,7 +997,7 @@ button:disabled {
   gap: 12px;
 }
 
-.slot-card {
+.working-card {
   border: 1px solid var(--ink);
   background: var(--card);
   padding: 14px;
@@ -1006,18 +1006,18 @@ button:disabled {
   gap: 8px;
 }
 
-.slot-card-reach {
+.working-card-reach {
   font: 600 10px var(--font-mono);
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--muted);
 }
 
-.slot-card-name {
+.working-card-name {
   font: 700 22px/1.1 var(--font-sans);
 }
 
-.slot-card-actions {
+.working-card-actions {
   display: flex;
   gap: 6px;
   margin-top: 4px;

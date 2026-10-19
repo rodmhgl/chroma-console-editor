@@ -2,6 +2,7 @@ import { controlChange, type MidiMessage } from '../midi/encode';
 import {
   CALIBRATION_LEVEL,
   PARAMS,
+  PRESET_PARAMS,
   clampToParam,
   ENGAGED_PARAMS,
   isEngaged,
@@ -91,9 +92,8 @@ export function dispatch(state: EditorState, action: EditorAction): CoreResult {
     case 'selectChoice':
       return selectChoice(state, action.id, action.choice);
     case 'loadWorking': {
-      const preset: ParamDef[] = Object.values(PARAMS).filter((p) => p.scope === 'preset');
       const working = Object.fromEntries(
-        preset.map((p) => [p.id, clampToParam(p, action.working[p.id as PresetParamId])]),
+        PRESET_PARAMS.map((p) => [p.id, clampToParam(p, action.working[p.id as PresetParamId])]),
       ) as WorkingState;
       return { state: sync({ ...state, working, history: history.EMPTY_HISTORY }, 'load'), messages: [] };
     }
@@ -185,8 +185,7 @@ const SEND_ALL_GROUPS: ParamDef['group'][] = ['effect', 'fxSetup', 'primary', 's
 
 /** Every Working State setting in the order Send All transmits it. */
 export function sendAllOrder(): PresetParamId[] {
-  const preset: ParamDef[] = Object.values(PARAMS).filter((p) => p.scope === 'preset');
-  return SEND_ALL_GROUPS.flatMap((group) => preset.filter((p) => p.group === group).map((p) => p.id as PresetParamId));
+  return SEND_ALL_GROUPS.flatMap((group) => PRESET_PARAMS.filter((p) => p.group === group).map((p) => p.id as PresetParamId));
 }
 
 /** The full Working State as MIDI, in Send All order. */

@@ -1,4 +1,4 @@
-import { PARAMS, clampToParam, type PresetParamId } from '../midi/map';
+import { PRESET_PARAMS, clampToParam, type PresetParamId } from '../midi/map';
 import type { WorkingState } from './state';
 
 // The Preset file format (ADR 0002, SPEC.md): Clean's envelope, with tags, and a flat map of raw preset-scoped params.
@@ -38,9 +38,6 @@ export type Preset = {
 };
 
 export type ParseResult = { ok: true; preset: Preset; warnings: string[] } | { ok: false; error: string };
-
-/** The params a Preset holds, in `PARAMS` order. */
-const PRESET_PARAMS = Object.values(PARAMS).filter((p) => p.scope === 'preset');
 
 /** 2-space JSON, envelope first, params in `PARAMS` order, trailing newline: an unchanged Preset writes an identical file. */
 export function serializePreset(preset: Preset): string {

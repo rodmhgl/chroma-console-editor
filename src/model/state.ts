@@ -1,4 +1,4 @@
-import { DEFAULT_MIDI_CHANNEL, PARAMS, type CalibrationLevelId, type PresetParamId } from '../midi/map';
+import { DEFAULT_MIDI_CHANNEL, PRESET_PARAMS, type CalibrationLevelId, type PresetParamId } from '../midi/map';
 
 /** The single pedal state the editor edits and sends: raw values keyed by parameter id. */
 export type WorkingState = Record<PresetParamId, number>;
@@ -10,11 +10,7 @@ export type WorkingState = Record<PresetParamId, number>;
 export type GlobalSettings = { midiChannel: number; calibrationLevel: CalibrationLevelId | null };
 
 export function defaultWorkingState(): WorkingState {
-  return Object.fromEntries(
-    Object.values(PARAMS)
-      .filter((p) => p.scope === 'preset')
-      .map((p) => [p.id, p.default]),
-  ) as WorkingState;
+  return Object.fromEntries(PRESET_PARAMS.map((p) => [p.id, p.default])) as WorkingState;
 }
 
 export function defaultGlobalSettings(): GlobalSettings {

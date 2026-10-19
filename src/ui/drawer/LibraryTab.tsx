@@ -65,9 +65,9 @@ export function LibraryTab() {
 
   return (
     <div className="library-tab">
-      <section className="slot-card" aria-label="Working State">
-        <div className="slot-card-reach">Working State</div>
-        <div className="slot-card-name">
+      <section className="working-card" aria-label="Working State">
+        <div className="working-card-reach">Working State</div>
+        <div className="working-card-name">
           {source.name}
           {modified && (
             <span className="modified-marker" title={MODIFIED_HELP}>
@@ -76,7 +76,7 @@ export function LibraryTab() {
             </span>
           )}
         </div>
-        <div className="slot-card-actions">
+        <div className="working-card-actions">
           <button
             type="button"
             className={`outline-button${startNew.armed ? ' is-armed' : ''}`}
@@ -352,7 +352,7 @@ function DetailsForm(props: { label: string; initial: PresetDetails; onSubmit(de
         Tags
         <input value={details.tags} placeholder="Separated by commas" onChange={change('tags')} />
       </label>
-      <div className="slot-card-actions">
+      <div className="working-card-actions">
         <button type="submit" className="solid-button" disabled={!details.name.trim()}>
           OK
         </button>
