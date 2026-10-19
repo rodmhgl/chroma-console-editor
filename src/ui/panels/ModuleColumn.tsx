@@ -3,10 +3,12 @@ import {
   ENGAGED_PARAMS,
   MODULES,
   PARAMS,
+  effectAt,
   fxSetupParams,
   isEngaged,
   moduleOrderAt,
   settingLabel,
+  type EffectColour,
   type EffectParamId,
   type LevelParamId,
   type ModuleId,
@@ -87,6 +89,7 @@ type ModuleColumnProps = {
 function ModuleColumn({ module, position, dragging, onDragChange, onMove }: ModuleColumnProps) {
   const { effect, amount, secondary } = COLUMNS[module];
   const effectValue = useEditorStore((s) => s.editor.working[effect]);
+  const colour = effectAt(PARAMS[effect], effectValue)?.colour;
   const bypassed = useEditorStore((s) => !isEngaged(s.editor.working, module));
   const selectEffect = useEditorStore((s) => s.selectEffect);
   const headingId = `module-${module}-heading`;
@@ -137,7 +140,7 @@ function ModuleColumn({ module, position, dragging, onDragChange, onMove }: Modu
         <h2 id={headingId} className="card-title module-title">
           {MODULES[module]}
         </h2>
-        <EngagedSwitch module={module} />
+        <EngagedSwitch module={module} colour={colour} />
       </div>
       <EffectPicker id={effect} value={effectValue} onSelect={(e) => selectEffect(effect, e)} />
       <div className="module-knobs">
@@ -160,8 +163,11 @@ function ModuleColumn({ module, position, dragging, onDragChange, onMove }: Modu
   );
 }
 
-/** Whether a Module is Engaged; Bypassing it keeps its Effect. Shown as a switch named "Engaged". */
-function EngagedSwitch({ module }: { module: ModuleId }) {
+/**
+ * Whether a Module is Engaged; Bypassing it keeps its Effect. Shown as a switch named "Engaged", lit in the Effect
+ * Colour while Engaged and unlit while Bypassed, like the pedal's Module button.
+ */
+function EngagedSwitch({ module, colour }: { module: ModuleId; colour: EffectColour | undefined }) {
   const engaged = useEditorStore((s) => isEngaged(s.editor.working, module));
   const setEngaged = useEditorStore((s) => s.setEngaged);
   return (
@@ -174,7 +180,7 @@ function EngagedSwitch({ module }: { module: ModuleId }) {
       title={PARAMS[ENGAGED_PARAMS[module]].help}
       onClick={() => setEngaged(module, !engaged)}
     >
-      <span className="engaged-switch-light" aria-hidden="true" />
+      <span className={colour ? `engaged-switch-light effect-${colour}` : 'engaged-switch-light'} aria-hidden="true" />
       {engaged ? 'Engaged' : 'Bypassed'}
     </button>
   );

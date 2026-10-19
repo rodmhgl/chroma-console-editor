@@ -83,8 +83,17 @@ export type ChoiceDef = {
   help?: string;
 };
 
-/** One Effect a Module can host: the CC range that selects it, its midpoint, which is what the editor sends, and what its controls do. */
+/** The colours the pedal lights a Module button to show its selected Effect (manual §3), in the order of a Module's Effects. */
+export const EFFECT_COLOURS = ['red', 'yellow', 'green', 'blue', 'purple'] as const;
+
+export type EffectColour = (typeof EFFECT_COLOURS)[number];
+
+/**
+ * One Effect a Module can host: the CC range that selects it, its midpoint, which is what the editor sends, its Effect
+ * Colour and what its controls do.
+ */
 export type EffectDef = ChoiceDef & {
+  colour: EffectColour;
   help: string;
   controls: Partial<Record<ControlRole, EffectControl>>;
 };
@@ -127,10 +136,11 @@ export type ParamDef = {
 /** Each Effect of a Module takes 22 values of its CC from 0, in order; 110–127 is OFF, which the editor never sends. */
 const EFFECT_RANGE = 22;
 
-const effect = <Id extends string>(id: Id, label: string, index: number, help: string, controls: EffectDef['controls']) => {
+/** The Effect Colour is given, not worked out from `index`, so reordering Effects can't quietly change it. */
+const effect = <Id extends string>(id: Id, label: string, index: number, colour: EffectColour, help: string, controls: EffectDef['controls']) => {
   const min = index * EFFECT_RANGE;
   const max = min + EFFECT_RANGE - 1;
-  return { id, label, min, max, value: Math.floor((min + max) / 2), help, controls } satisfies EffectDef;
+  return { id, label, min, max, value: Math.floor((min + max) / 2), colour, help, controls } satisfies EffectDef;
 };
 
 const effectSelection = <Id extends string, const E extends readonly EffectDef[]>(id: Id, cc: number, module: ModuleId, effects: E, help: string) =>
@@ -221,48 +231,48 @@ const CUT_BOOST = ['Cut', 'Boost'] as const;
 const OCTAVES = ['−1 oct', '+1 oct'] as const;
 
 const CHARACTER_EFFECTS = [
-  effect('drive', 'Drive', 0, 'Tube-like drive, from warm preamp to full overdrive.', {
+  effect('drive', 'Drive', 0, 'red', 'Tube-like drive, from warm preamp to full overdrive.', {
     amount: { meaning: 'overdrive', help: 'The intensity of the overdrive.' },
   }),
-  effect('sweeten', 'Sweeten', 1, 'A preamp that adds EQ, compression and gentle saturation as Amount rises.', {
+  effect('sweeten', 'Sweeten', 1, 'yellow', 'A preamp that adds EQ, compression and gentle saturation as Amount rises.', {
     amount: { meaning: 'compression, saturation', help: 'Compression and saturation: subtle sweetening low, light overdrive high.' },
   }),
-  effect('fuzz', 'Fuzz', 2, 'Dynamic vintage-voiced fuzz, from smooth and rounded to brash blown-speaker sounds.', {
+  effect('fuzz', 'Fuzz', 2, 'green', 'Dynamic vintage-voiced fuzz, from smooth and rounded to brash blown-speaker sounds.', {
     amount: { meaning: 'fuzz', help: 'The intensity of the fuzz.' },
     tilt: { meaning: 'tone, bias', help: 'Tone, and the transient and bias of the fuzz: neutral at centre, darker left, brighter right.' },
   }),
-  effect('howl', 'Howl', 3, 'Resonant filter fuzz: smooth sustaining tones or synth-like stabs.', {
+  effect('howl', 'Howl', 3, 'blue', 'Resonant filter fuzz: smooth sustaining tones or synth-like stabs.', {
     amount: { meaning: 'howl', help: 'The intensity of the Howl.' },
     tilt: { meaning: 'tone, voice', help: 'Tone, and whether Howl sustains smoothly or stabs: neutral at centre, darker left, brighter right.' },
   }),
-  effect('swell', 'Swell', 4, 'Envelope-triggered volume swells; leave space between notes to trigger them.', {
+  effect('swell', 'Swell', 4, 'purple', 'Envelope-triggered volume swells; leave space between notes to trigger them.', {
     amount: { meaning: 'attack, decay', help: 'The attack and decay times of the swells.' },
     sensitivity: { meaning: 'trigger', help: 'The triggering threshold: how readily your playing sets off a swell. Neutral at centre.' },
   }),
 ] as const;
 
 const MOVEMENT_EFFECTS = [
-  effect('doubler', 'Doubler', 0, 'Stereo double tracking, from tight doubling to short slap-back.', {
+  effect('doubler', 'Doubler', 0, 'red', 'Stereo double tracking, from tight doubling to short slap-back.', {
     rate: { meaning: 'doubling time', help: 'The doubling time, from short to long.' },
     amount: { meaning: 'doubling', help: 'Mixes in more doubling as it rises.' },
     drift: { meaning: 'pitch shifts', help: 'Random momentary pitch shifts, more intense as it rises.' },
   }),
-  effect('vibrato', 'Vibrato', 1, 'Pitch modulation, from classic sine-wave vibrato to tape-like random warble.', {
+  effect('vibrato', 'Vibrato', 1, 'yellow', 'Pitch modulation, from classic sine-wave vibrato to tape-like random warble.', {
     rate: { meaning: 'speed', help: 'The frequency of the pitch modulation.' },
     amount: { meaning: 'depth', help: 'The modulation depth.' },
     drift: { meaning: 'warble, width', help: 'Widens the stereo image and moves toward a random, tape-warble waveform.' },
   }),
-  effect('phaser', 'Phaser', 2, 'Vintage-voiced phaser, from swirling sweeps to pulsing vibrato-like undulation.', {
+  effect('phaser', 'Phaser', 2, 'green', 'Vintage-voiced phaser, from swirling sweeps to pulsing vibrato-like undulation.', {
     rate: { meaning: 'speed', help: 'The phase-shifting frequency.' },
     amount: { meaning: 'intensity, stages', help: 'Modulation intensity, adding phase-shifting stages from 2 up to 12.' },
     drift: { meaning: 'randomness', help: 'Randomness in the phase-shifting waveform.' },
   }),
-  effect('tremolo', 'Tremolo', 3, 'Amplitude modulation, from amp shimmer to hard square-wave chop.', {
+  effect('tremolo', 'Tremolo', 3, 'blue', 'Amplitude modulation, from amp shimmer to hard square-wave chop.', {
     rate: { meaning: 'speed', help: 'The amplitude modulation frequency.' },
     amount: { meaning: 'depth', help: 'The tremolo depth, from soft flutter to choppy rhythm.' },
     drift: { meaning: 'instability', help: 'Randomness, variation and instability in the tremolo.' },
   }),
-  effect('pitch', 'Pitch', 4, 'Pitch shifting from −1 octave to +1 octave.', {
+  effect('pitch', 'Pitch', 4, 'purple', 'Pitch shifting from −1 octave to +1 octave.', {
     rate: { meaning: 'pitch', help: 'The pitch: −1 octave fully left, no shift at centre, +1 octave fully right, gliding between.', octaves: true },
     amount: { meaning: 'pitch mix', help: 'The mix of the pitch-shifted signal; 100% wet fully clockwise.' },
     drift: { meaning: 'lo-fi', help: 'Lowers the pitch shifter’s resolution and adds instability; works even with no shift.' },
@@ -270,27 +280,27 @@ const MOVEMENT_EFFECTS = [
 ] as const;
 
 const DIFFUSION_EFFECTS = [
-  effect('cascade', 'Cascade', 0, 'A bucket-brigade style analog delay, but heightened; darker, with subtle modulation.', {
+  effect('cascade', 'Cascade', 0, 'red', 'A bucket-brigade style analog delay, but heightened; darker, with subtle modulation.', {
     time: { meaning: 'delay time', help: 'The delay time, from short slapback to quarter-note taps; tapped tempos are quantised.' },
     amount: { meaning: 'feedback', help: 'Repeats and feedback, up to self-oscillation at maximum.' },
     drift: { meaning: 'degradation', help: 'Pitch modulation, instability and degradation of the repeats.' },
   }),
-  effect('reels', 'Reels', 1, 'A well-worn tape echo: gritty, bright and slightly wonky.', {
+  effect('reels', 'Reels', 1, 'yellow', 'A well-worn tape echo: gritty, bright and slightly wonky.', {
     time: { meaning: 'delay time', help: 'The delay time, from short slapback to quarter-note taps.' },
     amount: { meaning: 'feedback', help: 'Repeats and feedback; lively self-oscillation at 100%.' },
     drift: { meaning: 'tape wear', help: 'Instability and degradation of the tape; repeats disintegrate as they recycle.' },
   }),
-  effect('space', 'Space', 2, 'Reverb blending five sounds, from tight echo chambers to huge sustaining clouds.', {
+  effect('space', 'Space', 2, 'green', 'Reverb blending five sounds, from tight echo chambers to huge sustaining clouds.', {
     time: { meaning: 'size, tone', help: 'The reverb size and tonality; larger clockwise.' },
     amount: { meaning: 'reverb mix', help: 'The wet/dry mix of the reverb; 100% wet fully clockwise.' },
     drift: { meaning: 'pitch modulation', help: 'Pitch modulation at various stages of the reverb.' },
   }),
-  effect('collage', 'Collage', 3, 'Wild looping delay that edits the delay line as Time moves.', {
+  effect('collage', 'Collage', 3, 'blue', 'Wild looping delay that edits the delay line as Time moves.', {
     time: { meaning: 'subdivision', help: 'The delay subdivision, from short granular samples to long loop-like phrases.' },
     amount: { meaning: 'feedback', help: 'Repeats and feedback, evolving into oscillation at maximum.' },
     drift: { meaning: 'loops', help: 'Random double-speed loops, and more pitch modulation.' },
   }),
-  effect('reverse', 'Reverse', 4, 'Reverse delay with variable playback speed and pitch, −1 to +1 octave.', {
+  effect('reverse', 'Reverse', 4, 'purple', 'Reverse delay with variable playback speed and pitch, −1 to +1 octave.', {
     time: { meaning: 'speed / pitch', help: 'Playback speed: half speed (−1 octave) fully left, normal at centre, double (+1 octave) fully right.', octaves: true },
     amount: { meaning: 'delay mix', help: 'The wet/dry mix of the delay; 100% wet fully clockwise.' },
     drift: { meaning: 'pitch modulation', help: 'Pitch modulation of the repeats.' },
@@ -298,19 +308,19 @@ const DIFFUSION_EFFECTS = [
 ] as const;
 
 const TEXTURE_EFFECTS = [
-  effect('filter', 'Filter', 0, 'Multi-mode filter: Tilt by default, or lowpass or highpass (Filter style).', {
+  effect('filter', 'Filter', 0, 'red', 'Multi-mode filter: Tilt by default, or lowpass or highpass (Filter style).', {
     amount: { meaning: 'cutoff', help: 'The cutoff frequency. Tilt style: neutral at centre. Lowpass: neutral fully clockwise. Highpass: neutral fully counter-clockwise.' },
   }),
-  effect('squash', 'Squash', 1, 'A heavy-handed compressor and overdrive, from subtle polish to grit.', {
+  effect('squash', 'Squash', 1, 'yellow', 'A heavy-handed compressor and overdrive, from subtle polish to grit.', {
     amount: { meaning: 'compression, drive', help: 'More compression, overdriving as it nears fully clockwise.' },
   }),
-  effect('cassette', 'Cassette', 2, 'Wow, flutter, warble and tape degradation from cassette recorders.', {
+  effect('cassette', 'Cassette', 2, 'green', 'Wow, flutter, warble and tape degradation from cassette recorders.', {
     amount: { meaning: 'tape', help: 'Tape saturation, compression, filtering and artifacts, with different flavours across the range.' },
   }),
-  effect('broken', 'Broken', 3, 'Pitch drops with amplitude and frequency modulation: motorised gear in need of service.', {
+  effect('broken', 'Broken', 3, 'blue', 'Pitch drops with amplitude and frequency modulation: motorised gear in need of service.', {
     amount: { meaning: 'breakdown', help: 'The breakdown, at full intensity fully clockwise.' },
   }),
-  effect('interference', 'Interference', 4, 'A dissolving layer of glitches, radio static and interference.', {
+  effect('interference', 'Interference', 4, 'purple', 'A dissolving layer of glitches, radio static and interference.', {
     amount: { meaning: 'interference', help: 'Moves through flavours of interference, more intense clockwise.' },
   }),
 ] as const;
