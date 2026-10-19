@@ -1,0 +1,10 @@
+# Hologram manual — copyrighted, kept locally as a reference only
+*.pdf
+
+node_modules/
+dist/
+.vite/
+.DS_Store
+test-results/
+playwright-report/
+*.tsbuildinfo
