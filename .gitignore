@@ -8,3 +8,6 @@ dist/
 test-results/
 playwright-report/
 *.tsbuildinfo
+
+# Other sessions' git worktrees
+.claude/worktrees/
