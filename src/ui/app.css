@@ -980,3 +980,208 @@ button:disabled {
   color: var(--muted);
 }
 
+
+/* ── Library tab ────────────────────────────────────────────────────── */
+
+.working-state-name {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font: 600 13px var(--font-sans);
+  white-space: nowrap;
+}
+
+.library-tab {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.slot-card {
+  border: 1px solid var(--ink);
+  background: var(--card);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.slot-card-reach {
+  font: 600 10px var(--font-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.slot-card-name {
+  font: 700 22px/1.1 var(--font-sans);
+}
+
+.slot-card-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.outline-button,
+.solid-button {
+  padding: 7px 12px;
+  border: 1px solid var(--ink);
+  background: transparent;
+  font: 600 11px var(--font-mono);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.solid-button {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+.is-armed {
+  background: var(--accent) !important;
+  border-color: var(--ink) !important;
+  color: var(--ink) !important;
+}
+
+.modified-marker {
+  color: var(--accent);
+}
+
+.library-folder {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font: 500 11px var(--font-mono);
+  color: var(--muted);
+}
+
+.library-error {
+  margin: 0;
+  font: 500 11px var(--font-mono);
+  color: var(--warning);
+}
+
+.library-problems {
+  font: 500 11px var(--font-mono);
+  color: var(--muted);
+}
+
+.library-problems ul {
+  margin: 6px 0 0;
+  padding-left: 16px;
+}
+
+.preset-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--row-rule);
+}
+
+.preset-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 4px;
+  border-bottom: 1px solid var(--row-rule);
+}
+
+.preset-row.is-active {
+  background: var(--inset);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.preset-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.preset-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border: 0;
+  background: none;
+  padding: 2px 4px;
+  text-align: left;
+  font: 600 13px var(--font-sans);
+}
+
+.preset-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 0;
+  padding: 0 4px;
+  list-style: none;
+}
+
+.preset-tags li {
+  padding: 1px 6px;
+  border: 1px solid var(--border-soft);
+  font: 500 10px var(--font-mono);
+  color: var(--muted);
+}
+
+.preset-dates,
+.preset-notes {
+  padding: 0 4px;
+  font: 500 10px var(--font-mono);
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.preset-notes {
+  font: 400 12px var(--font-sans);
+  color: var(--ink);
+  white-space: pre-line;
+}
+
+.preset-empty {
+  padding: 10px 4px;
+  font: 500 11px var(--font-mono);
+  color: var(--muted);
+}
+
+.name-form {
+  display: flex;
+  flex: 1;
+  gap: 6px;
+}
+
+.details-form {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.details-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font: 600 10px var(--font-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.name-form input,
+.details-form input,
+.details-form textarea {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid var(--ink);
+  background: var(--card);
+  font: 400 13px var(--font-sans);
+  letter-spacing: normal;
+  text-transform: none;
+  color: var(--ink);
+}

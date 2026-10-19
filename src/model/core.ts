@@ -42,6 +42,11 @@ export type EditorAction =
   | { type: 'setEngaged'; module: ModuleId; engaged: boolean }
   /** A setting such as Filter style by name: sends that choice's value. */
   | { type: 'selectChoice'; id: ChoiceParamId; choice: ChoiceId }
+  /**
+   * A whole new Working State (an opened Preset, or New), clamped. Sends nothing: the store follows it with Send All,
+   * and it is Possibly Stale until that finishes. Clears the undo history, whose steps belong to the old one.
+   */
+  | { type: 'loadWorking'; working: WorkingState }
   /** The MIDI channel the editor sends on. Sends nothing and isn't undoable; a change makes the Sync Status Possibly Stale. */
   | { type: 'setMidiChannel'; midiChannel: number }
   /** One button of a Performance Control, such as Capture → Record: sends it and changes nothing in the Editor State. */
@@ -85,6 +90,13 @@ export function dispatch(state: EditorState, action: EditorAction): CoreResult {
       return selectChoice(state, ENGAGED_PARAMS[action.module], action.engaged ? 'engaged' : 'bypassed');
     case 'selectChoice':
       return selectChoice(state, action.id, action.choice);
+    case 'loadWorking': {
+      const preset: ParamDef[] = Object.values(PARAMS).filter((p) => p.scope === 'preset');
+      const working = Object.fromEntries(
+        preset.map((p) => [p.id, clampToParam(p, action.working[p.id as PresetParamId])]),
+      ) as WorkingState;
+      return { state: sync({ ...state, working, history: history.EMPTY_HISTORY }, 'load'), messages: [] };
+    }
     case 'setMidiChannel': {
       if (action.midiChannel === state.global.midiChannel) return { state, messages: [] };
       const next = { ...state, global: { ...state.global, midiChannel: action.midiChannel } };

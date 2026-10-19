@@ -2,6 +2,7 @@ import { useEffect, useId } from 'react';
 import { SYNC_STATUS_LABELS, type SyncStatus } from '../model/sync';
 import { UPDATE_WAITING_HELP, useAppStore } from '../store/appStore';
 import { useEditorStore } from '../store/editorStore';
+import { MODIFIED_HELP, useLibraryStore, useWorkingStateModified } from '../store/library';
 import { useLayoutStore } from '../store/layoutStore';
 import { DATA_BUTTON_ID, DATA_DRAWER_ID } from './domIds';
 import { MIDI_CHANNELS, midiChannelLabel } from './midiChannels';
@@ -17,11 +18,13 @@ const SYNC_STATUS_HELP: Record<SyncStatus, string> = {
   unknown: 'No output is connected, so nothing reaches the pedal.',
 };
 
-/** The top bar: Sync Status, output, MIDI channel, connection indicator, Send All and the Data drawer button. */
+/** The top bar: the Working State's name, Sync Status, output, MIDI channel, connection indicator, Send All and the Data drawer button. */
 export function ConnectionBar() {
   const { outputs, outputId, editor, setOutput, setMidiChannel, sendAll, canSendAll, connectWebMidi } = useEditorStore();
   const { midiChannel } = editor.global;
   const sendAllKeys = commandKeys('E');
+  const workingStateName = useLibraryStore((s) => s.source.name);
+  const modified = useWorkingStateModified();
   const drawerOpen = useLayoutStore((s) => s.drawerOpen);
   const toggleDrawer = useLayoutStore((s) => s.toggleDrawer);
   // Subscribing to `outputs` above re-renders this on every hot-plug, which re-reads the connection state.
@@ -40,6 +43,10 @@ export function ConnectionBar() {
       <h1 className="wordmark">
         Chroma Console<span> / Editor</span>
       </h1>
+      <output className="working-state-name" aria-label="Working State" title={modified ? MODIFIED_HELP : undefined}>
+        {workingStateName}
+        {modified && ' •'}
+      </output>
       <output className={`sync-pill is-${editor.sync}`} aria-label="Sync Status" title={SYNC_STATUS_HELP[editor.sync]}>
         {SYNC_STATUS_LABELS[editor.sync]}
       </output>
