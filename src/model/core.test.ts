@@ -589,3 +589,66 @@ describe('loadWorking', () => {
     expect(dispatch(loaded, { type: 'undo' })).toEqual({ state: loaded, messages: [] });
   });
 });
+
+describe('recallSlot', () => {
+  const committed = { ...initialEditorState().working, characterEffect: 76, tilt: 20, movementEngaged: 0 };
+  /** In Sync on MIDI channel 5, with an edit to undo and Slot B-14 (PC 33) in the Slot Map. */
+  const withSlotMap = (): EditorState => {
+    const state = run(
+      onMidiChannel5(),
+      { type: 'outputConnected' },
+      { type: 'sendAllFinished' },
+      { type: 'setParam', id: 'mix', value: 3 },
+    ).state;
+    return { ...state, slotMap: { 33: { committed, presetId: 'shimmer', name: 'Shimmer Tape' } } };
+  };
+
+  it('starts with an empty Slot Map', () => {
+    expect(initialEditorState().slotMap).toEqual({});
+  });
+
+  it('sends the Program Change for the Slot: PC 0–79 is A-1 … D-20', () => {
+    for (const slot of [0, 33, 79]) {
+      expect(dispatch(withSlotMap(), { type: 'recallSlot', slot }).messages).toEqual([[0xc4, slot]]);
+    }
+  });
+
+  it('ignores a Program Change past the 80 Slots', () => {
+    const state = withSlotMap();
+    expect(dispatch(state, { type: 'recallSlot', slot: 80 })).toEqual({ state, messages: [] });
+    expect(dispatch(state, { type: 'recallSlot', slot: -1 })).toEqual({ state, messages: [] });
+  });
+
+  it('makes a known Slot’s committed state the Working State, Possibly Stale: the pedal never confirmed the Slot Map', () => {
+    const { state } = dispatch(withSlotMap(), { type: 'recallSlot', slot: 33 });
+
+    expect(state.working).toEqual(committed);
+    expect(state.sync).toBe('possiblyStale');
+    expect(dispatch(state, { type: 'sendAllFinished' }).state.sync).toBe('inSync');
+  });
+
+  it('is Possibly Stale after a known Slot even from Unknown, since the Slot replaces whatever the pedal was sounding', () => {
+    const unknown = dispatch(withSlotMap(), { type: 'recallSlot', slot: 0 }).state;
+    expect(dispatch(unknown, { type: 'recallSlot', slot: 33 }).state.sync).toBe('possiblyStale');
+  });
+
+  it('leaves the Working State alone on an unknown Slot, but makes the Sync Status Unknown', () => {
+    const before = withSlotMap();
+    const { state } = dispatch(before, { type: 'recallSlot', slot: 0 });
+
+    expect(state.working).toEqual(before.working);
+    expect(state.sync).toBe('unknown');
+  });
+
+  it('clears the undo history either way: undoing would send one CC into what the Slot holds', () => {
+    for (const slot of [0, 33]) {
+      const recalled = dispatch(withSlotMap(), { type: 'recallSlot', slot }).state;
+      expect(dispatch(recalled, { type: 'undo' })).toEqual({ state: recalled, messages: [] });
+    }
+  });
+
+  it('leaves the Slot Map alone', () => {
+    const before = withSlotMap();
+    expect(dispatch(before, { type: 'recallSlot', slot: 0 }).state.slotMap).toBe(before.slotMap);
+  });
+});

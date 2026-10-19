@@ -3,7 +3,7 @@ import { createVirtualPedal, type VirtualPedal } from '../midi/transport/virtual
 import { parsePreset, serializePreset, type Preset } from '../model/schema';
 import { defaultWorkingState } from '../model/state';
 import { createEditorStore } from './editorStore';
-import { createLibraryStore, isModified, type LibraryDeps, type PickedFolder } from './library';
+import { createLibraryStore, isModified, slotInfo, type LibraryDeps, type PickedFolder } from './library';
 
 /**
  * A Library folder held in memory: file name → contents. `permission` is what the browser allows without asking,
@@ -560,6 +560,75 @@ describe('Delete', () => {
     expect(library.getState().source.presetId).toBeNull();
     expect(workingLabel()).toBe('Shimmer Tape');
     expect(await library.getState().save()).toBe(false);
+  });
+});
+
+describe('recalling a Slot', () => {
+  const committed = { ...defaultWorkingState(), tilt: 20 };
+  /** Slot B-14 (PC 33) holds what was committed from the Preset `presetId`. */
+  function commitToB14(presetId: string | null) {
+    const entry = { committed, presetId, name: 'Shimmer Tape' };
+    editor.setState({ editor: { ...editor.getState().editor, slotMap: { 33: entry } } });
+  }
+
+  it('makes a known Slot’s committed state the Working State, belonging to its Preset', async () => {
+    const shimmer = preset('Shimmer Tape', { tilt: 20 });
+    await setup(memoryFolder({ 'shimmer-tape.ccpreset.json': serializePreset(shimmer) }).folder);
+    commitToB14(shimmer.id);
+
+    expect(library.getState().recallSlot(33)).toBe(true);
+
+    expect(editor.getState().editor.working).toEqual(committed);
+    expect(editor.getState().editor.sync).toBe('possiblyStale');
+    expect(library.getState().source.presetId).toBe(shimmer.id);
+    expect(workingLabel()).toBe('Shimmer Tape');
+    expect(virtualPedal.getSnapshot().log.at(-1)?.text).toBe('PC 33 → Recall Slot B-14');
+  });
+
+  it('shows the Working State as modified when its Preset has changed since the commit, so Save can’t put the older one back quietly', async () => {
+    const shimmer = preset('Renamed', { tilt: 90 });
+    await setup(memoryFolder({ 'renamed.ccpreset.json': serializePreset(shimmer) }).folder);
+    commitToB14(shimmer.id);
+
+    library.getState().recallSlot(33);
+
+    expect(editor.getState().editor.working).toEqual(committed);
+    expect(workingLabel()).toBe('Renamed •');
+  });
+
+  it('keeps the committed name, with no Preset, once the Preset has been deleted', async () => {
+    await setup(memoryFolder().folder);
+    commitToB14('gone');
+
+    library.getState().recallSlot(33);
+
+    expect(library.getState().source.presetId).toBeNull();
+    expect(workingLabel()).toBe('Shimmer Tape');
+  });
+
+  it('leaves the Working State and its Preset alone on an unknown Slot', async () => {
+    const shimmer = preset('Shimmer Tape');
+    await setup(memoryFolder({ 'shimmer-tape.ccpreset.json': serializePreset(shimmer) }).folder);
+    await library.getState().openPreset(shimmer.id);
+    editor.getState().setParam('mix', 3);
+    const source = library.getState().source;
+
+    library.getState().recallSlot(0);
+
+    expect(library.getState().source).toBe(source);
+    expect(workingLabel()).toBe('Shimmer Tape •');
+    expect(editor.getState().editor.sync).toBe('unknown');
+  });
+});
+
+describe('Slot info', () => {
+  it('names a known Slot by its Preset, marking it changed since commit, and knows nothing of other Slots', () => {
+    const shimmer = preset('Renamed', { tilt: 90 });
+    const entry = { committed: defaultWorkingState(), presetId: shimmer.id, name: 'Shimmer Tape' };
+    const presets = [{ preset: shimmer, fileName: 'renamed.ccpreset.json' }];
+
+    expect(slotInfo({ 33: entry }, presets, 33)).toEqual({ entry, preset: shimmer, name: 'Renamed', changed: true });
+    expect(slotInfo({ 33: entry }, presets, 0)).toBeUndefined();
   });
 });
 

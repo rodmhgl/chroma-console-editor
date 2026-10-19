@@ -15,7 +15,8 @@ export const MIDI_CHANNEL_HINT =
 const SYNC_STATUS_HELP: Record<SyncStatus, string> = {
   inSync: 'The pedal should be sounding what the editor shows: everything was sent. Touching the pedal’s own controls isn’t detected.',
   possiblyStale: 'Since connecting, a MIDI channel change, Raw MIDI or a failed send, the pedal may hold anything. Send All to match it.',
-  unknown: 'No output is connected, so nothing reaches the pedal.',
+  unknown:
+    'No output is connected, so nothing reaches the pedal. Or a Slot the editor knows nothing about was recalled: Send All to make the pedal match the editor again.',
 };
 
 /** The top bar: the Working State's name, Sync Status, output, MIDI channel, connection indicator, Send All and the Data drawer button. */
@@ -123,6 +124,17 @@ function UpdatePill() {
         Reload
       </button>
     </div>
+  );
+}
+
+/** Shown above the console while the editor can't tell what the pedal is sounding. */
+export function SyncUnknownNote() {
+  const sync = useEditorStore((s) => s.editor.sync);
+  if (sync !== 'unknown') return null;
+  return (
+    <p className="connection-note" role="status">
+      The pedal may not be sounding what these controls show. Send All to make it match.
+    </p>
   );
 }
 

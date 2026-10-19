@@ -14,7 +14,18 @@ describe('Virtual Pedal transport', () => {
     pedal.send([0xb0, 20, 76]);
     pedal.send([0xc0, 3]);
 
-    expect(logOf(pedal)).toEqual(['CC 20 = 76 → (not in MIDI map)', 'PC 3 → (not in MIDI map)']);
+    expect(logOf(pedal)).toEqual(['CC 20 = 76 → (not in MIDI map)', 'PC 3 → Recall Slot A-4']);
+  });
+
+  it('logs a Slot recall but sounds on unchanged: it holds no Slots', () => {
+    const pedal = createVirtualPedal();
+    const before = pedal.getSnapshot().state;
+
+    pedal.send([0xc0, 79]);
+    pedal.send([0xc0, 80]);
+
+    expect(logOf(pedal)).toEqual(['PC 79 → Recall Slot D-20', 'PC 80 → (no such Slot)']);
+    expect(pedal.getSnapshot().state).toBe(before);
   });
 
   it('decodes a Character Effect selection by its CC range, and OFF', () => {

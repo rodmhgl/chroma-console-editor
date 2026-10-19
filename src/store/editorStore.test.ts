@@ -202,7 +202,7 @@ describe('editor store Raw MIDI', () => {
       'CC 93 = 1 → Tap',
       'CC 93 = 2 → Tap',
       'CC 93 = 3 → Tap',
-      'PC 3 → (not in MIDI map)',
+      'PC 3 → Recall Slot A-4',
     ]);
     // Newest first, with the repeated CC folded into one row that shows its latest value.
     expect(store.getState().sent.map((m) => m.bytes)).toEqual([
@@ -428,5 +428,49 @@ describe('editor store undo/redo', () => {
 
     expect(pedal.getSnapshot().log.map((e) => e.text)).toEqual(['CC 64 = 10 → Character → Tilt']);
     expect(store.getState().editor.global.midiChannel).toBe(3);
+  });
+});
+
+describe('editor store Slot recall', () => {
+  afterEach(() => vi.useRealTimers());
+
+  const heardBy = (pedal: ReturnType<typeof createVirtualPedal>) => pedal.getSnapshot().log.map((e) => e.text);
+
+  it('sends the Slot’s Program Change; an unknown Slot makes the Sync Status Unknown', () => {
+    const pedal = createVirtualPedal();
+    const store = createEditorStore(pedal);
+
+    expect(store.getState().recallSlot(33)).toBe(true);
+
+    expect(heardBy(pedal)).toEqual(['PC 33 → Recall Slot B-14']);
+    expect(store.getState().editor.sync).toBe('unknown');
+  });
+
+  it('sends nothing and changes nothing with no output connected', async () => {
+    const pedal = output('usb', PEDAL_NAME);
+    const midi = fakeWebMidi([pedal]);
+    const store = await connectedStore();
+    midi.unplug(pedal);
+    vi.mocked(pedal.send).mockClear();
+    const before = store.getState().editor;
+
+    expect(store.getState().recallSlot(33)).toBe(false);
+
+    expect(pedal.send).not.toHaveBeenCalled();
+    expect(store.getState().editor).toBe(before);
+  });
+
+  it('abandons a Send All in progress, which would otherwise send the old Working State over the Slot', async () => {
+    vi.useFakeTimers();
+    const pedal = createVirtualPedal();
+    const store = createEditorStore(pedal);
+
+    const done = store.getState().sendAll();
+    store.getState().recallSlot(0);
+    await vi.runAllTimersAsync();
+
+    expect(await done).toBe(false);
+    expect(heardBy(pedal)).toEqual(['CC 16 = 10 → Character → Drive', 'PC 0 → Recall Slot A-1']);
+    expect(store.getState().editor.sync).toBe('unknown');
   });
 });

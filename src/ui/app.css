@@ -1185,3 +1185,73 @@ button:disabled {
   text-transform: none;
   color: var(--ink);
 }
+
+.slots-tab {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.slots-note {
+  margin: 0;
+  font: 500 11px var(--font-mono);
+  color: var(--muted);
+}
+
+.slot-bank-title {
+  margin: 0 0 4px;
+  font: 600 10px var(--font-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.slot-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--row-rule);
+}
+
+.slot-row {
+  border-bottom: 1px solid var(--row-rule);
+}
+
+.slot-recall {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+  padding: 5px 4px;
+  border: 0;
+  background: none;
+  text-align: left;
+}
+
+.slot-recall:hover:not(:disabled) {
+  background: var(--inset);
+}
+
+.slot-address {
+  flex: none;
+  width: 3.5em;
+  font: 600 11px var(--font-mono);
+}
+
+.slot-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 600 13px var(--font-sans);
+}
+
+.slot-row.is-unknown .slot-name {
+  font: 500 11px var(--font-mono);
+  color: var(--muted);
+}
+
+.changed-marker {
+  color: var(--accent);
+}

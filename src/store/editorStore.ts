@@ -64,6 +64,11 @@ type EditorStore = {
    * like `sendAll`, or false with no output.
    */
   loadWorking(working: WorkingState): Promise<boolean>;
+  /**
+   * Recalls a Slot on the pedal by its Program Change, 0–79: a Slot the Slot Map knows becomes the Working State.
+   * False, sending nothing, with no output connected. Abandons a Send All, which would send over what the Slot holds.
+   */
+  recallSlot(slot: number): boolean;
   sendingAll: boolean;
   /** An output is connected and no Send All is running. */
   canSendAll(): boolean;
@@ -200,6 +205,12 @@ export function createEditorStore(virtualPedal: VirtualPedal) {
         if (get().isOutputConnected()) return get().sendAll();
         abandonSendAll();
         return Promise.resolve(false);
+      },
+      recallSlot(slot) {
+        if (!get().isOutputConnected()) return false;
+        abandonSendAll();
+        apply({ type: 'recallSlot', slot });
+        return true;
       },
       async sendAll() {
         const run = ++sendAllRun;

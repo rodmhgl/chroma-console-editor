@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { virtualPedal } from '../store/editorStore';
 import { useSettingsStore } from '../store/settingsStore';
-import { ConnectionBar, WebMidiNote } from './ConnectionBar';
+import { ConnectionBar, SyncUnknownNote, WebMidiNote } from './ConnectionBar';
 import { DataDrawer } from './drawer/DataDrawer';
 import { useLayoutScale } from './layoutScale';
 import { MODULE_IDS, ModuleColumn } from './panels/ModuleColumn';
@@ -32,6 +32,7 @@ export function App() {
       <div className="workspace">
         <main className="main-column">
           <WebMidiNote />
+          <SyncUnknownNote />
           <section className="console" aria-label="Editor">
             <SharedControls />
             <div className="modules">

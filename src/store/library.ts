@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import type { PresetParamId } from '../midi/map';
 import { PRESET_EXTENSION, parsePreset, presetName, presetTags, serializePreset, type Preset } from '../model/schema';
 import { defaultWorkingState, type WorkingState } from '../model/state';
+import { isChangedSinceCommit, slotName, type SlotMap, type SlotMapEntry } from '../model/slotMap';
 import { useEditorStore, type createEditorStore } from './editorStore';
 
 // The Library: Presets kept as real files in a folder the user picks, or in browser storage where the browser
@@ -121,6 +122,12 @@ type LibraryStore = {
   duplicate(id: string): Promise<void>;
   /** Deletes a Preset's file. The File System Access API has no trash, so this is permanent: the UI confirms first. */
   deletePreset(id: string): Promise<void>;
+  /**
+   * Recalls a Slot on the pedal. One the Slot Map knows makes the Working State its committed state, belonging to its
+   * Preset if still here; if that Preset has changed since, the Working State shows as modified from it. False with no
+   * output connected.
+   */
+  recallSlot(slot: number): boolean;
 };
 
 type EditorStoreApi = ReturnType<typeof createEditorStore>;
@@ -367,6 +374,16 @@ export function createLibraryStore(editor: EditorStoreApi, deps: LibraryDeps) {
         set({ presets: get().presets.filter((p) => p !== old) });
         if (get().source.presetId === id) set({ source: { ...get().source, presetId: null } });
       },
+      recallSlot(slot) {
+        if (!editor.getState().recallSlot(slot)) return false;
+        const info = slotInfo(editor.getState().editor.slotMap, get().presets, slot);
+        if (info) {
+          // Compared against the Preset as it is now, so Save can't quietly put back the older committed state.
+          const params = info.preset?.params ?? info.entry.committed;
+          set({ source: { presetId: info.preset?.id ?? null, name: info.name, params } });
+        }
+        return true;
+      },
     };
   });
 }
@@ -525,6 +542,17 @@ if (typeof indexedDB !== 'undefined') {
       problems: [`${folderAccessAvailable ? 'Library folder' : BROWSER_STORAGE_NAME}: ${String(e)}`],
     }),
   );
+}
+
+/** What the Slot Map believes a Slot holds, named and marked by its Preset where still in the Library. */
+export type SlotInfo = { entry: SlotMapEntry; preset: Preset | undefined; name: string; changed: boolean };
+
+/** A Slot the Slot Map knows, or undefined for an unknown one. */
+export function slotInfo(slotMap: SlotMap, presets: LibraryEntry[], slot: number): SlotInfo | undefined {
+  const entry = slotMap[slot];
+  if (!entry) return undefined;
+  const preset = presets.find((p) => p.preset.id === entry.presetId)?.preset;
+  return { entry, preset, name: slotName(entry, preset), changed: isChangedSinceCommit(entry, preset) };
 }
 
 /** Whether the app's Working State has been edited since it was opened or saved. */
