@@ -116,3 +116,16 @@ The manual says the expression pedal can drive "any single primary control (TILT
   5. Send `CC 91 = 0` then `CC 91 = 127` (pedal Bypass/Engage). Does CC 91 respect the Dual Bypass module set, or bypass the whole pedal?
 - **Editor assumes:** CC 92 and CC 91 are Performance Controls, never stored in a Preset; CC 103–106 set each Module's Engaged/Bypassed state.
 - **Result:** _not yet run_
+
+## 10. Where Reset Secondary leaves Drift and the other Secondary Controls
+
+The manual shows Sensitivity, Output Level and Effect Vol as neutral at centre, but Drift only as 0–100%. What does the pedal's own Reset Secondary set each one to?
+
+- **Setup:** Reset, then `CC 17 = 32` (Movement → Vibrato), `CC 67 = 100` (deep), and on the pedal turn every Secondary Control well away from where it started (press A+B to reach them).
+- **Steps:**
+  1. On the pedal, hold A+B until the lights pulse teal (Reset Secondary). Leave the menu with A+B.
+  2. Now send `CC 74 = 0` (Movement → Drift). Does the vibrato change? Then `CC 74 = 64`: does that sound like where Reset left it?
+  3. Do the same for Diffusion's Drift with `CC 18 = 32` (Reels) and `CC 76 = 0`, then `CC 76 = 64`.
+  4. Send `CC 72 = 64`, `CC 78 = 64` and `CC 73 = 64`. Does any of them change the sound after Reset?
+- **Editor assumes:** a new Preset starts with Drift at 0 (none) and Sensitivity, Output Level and every Effect Vol at 64 (neutral).
+- **Result:** _not yet run_

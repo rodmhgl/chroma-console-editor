@@ -15,7 +15,7 @@ export function EffectPicker<P extends EffectParamId>({ id, value, onSelect }: P
       <legend className="sr-only">{param.label}</legend>
       <div className="effect-picker-options">
         {param.effects.map((effect) => (
-          <label key={effect.id} className={effect.id === selected?.id ? 'is-active' : undefined}>
+          <label key={effect.id} className={effect.id === selected?.id ? 'is-active' : undefined} title={effect.help}>
             <input
               type="radio"
               className="effect-picker-input"

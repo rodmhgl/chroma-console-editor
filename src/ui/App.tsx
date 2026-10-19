@@ -4,10 +4,11 @@ import { useSettingsStore } from '../store/settingsStore';
 import { ConnectionBar, WebMidiNote } from './ConnectionBar';
 import { DataDrawer } from './drawer/DataDrawer';
 import { useLayoutScale } from './layoutScale';
-import { CharacterModule } from './panels/CharacterModule';
+import { MODULE_IDS, ModuleColumn } from './panels/ModuleColumn';
+import { SharedControls } from './panels/SharedControls';
 import { VirtualPedalView } from './VirtualPedalView';
 
-/** The editor: the connection bar, then the console of Modules, and the Virtual Pedal. */
+/** The editor: the connection bar, then the console of shared controls and Modules, and the Virtual Pedal. */
 export function App() {
   const theme = useSettingsStore((s) => s.theme);
   useLayoutScale();
@@ -26,7 +27,12 @@ export function App() {
         <main className="main-column">
           <WebMidiNote />
           <section className="console" aria-label="Editor">
-            <CharacterModule />
+            <SharedControls />
+            <div className="modules">
+              {MODULE_IDS.map((module) => (
+                <ModuleColumn key={module} module={module} />
+              ))}
+            </div>
           </section>
           <VirtualPedalView pedal={virtualPedal} />
           <footer className="affiliation-notice">

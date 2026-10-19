@@ -16,7 +16,7 @@ export function VirtualPedalView({ pedal }: { pedal: VirtualPedal }) {
           <output aria-label="MIDI channel">{midiChannel}</output>
         </dd>
         {(Object.values(PARAMS) as ParamDef[]).map((param) => {
-          const name = `${MODULES[param.module]} ${param.label}`;
+          const name = param.module ? `${MODULES[param.module]} ${param.label}` : param.label;
           const value = state[param.id as PresetParamId];
           return [
             <dt key={`${param.id}-name`}>{name}</dt>,

@@ -15,6 +15,12 @@
   --warning: oklch(0.55 0.16 30);
   /* Each Module's colour, as its knobs are on the pedal. */
   --module-character: oklch(0.55 0.17 25);
+  --module-movement: oklch(0.68 0.14 85);
+  /* Text on a Module's colour; Movement's yellow is too light for the card colour on paper. */
+  --on-module: var(--card);
+  --on-module-movement: var(--ink);
+  --module-diffusion: oklch(0.55 0.13 150);
+  --module-texture: oklch(0.52 0.13 250);
 
   --font-sans: 'Archivo Variable', system-ui, sans-serif;
   --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
@@ -51,6 +57,10 @@
   --accent: #77bc44;
   --warning: #ff6a3d;
   --module-character: oklch(0.68 0.16 25);
+  --module-movement: oklch(0.82 0.14 90);
+  --on-module-movement: var(--card);
+  --module-diffusion: oklch(0.72 0.14 150);
+  --module-texture: oklch(0.7 0.12 250);
   --disc-hi: #5d6163;
   --disc-inset: rgba(255, 255, 255, 0.12);
   --shadow-knob: 0 6px 14px rgba(0, 0, 0, 0.45);
@@ -134,8 +144,14 @@ button:disabled {
 }
 
 .console {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.modules {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
   gap: 16px;
 }
 
@@ -288,6 +304,19 @@ button:disabled {
   --module: var(--module-character);
 }
 
+.module-movement {
+  --module: var(--module-movement);
+  --on-module: var(--on-module-movement);
+}
+
+.module-diffusion {
+  --module: var(--module-diffusion);
+}
+
+.module-texture {
+  --module: var(--module-texture);
+}
+
 .module-card {
   display: flex;
   flex-direction: column;
@@ -305,6 +334,39 @@ button:disabled {
   gap: 16px;
 }
 
+/* The Secondary Controls, which the pedal hides behind a menu, set apart below the Amount. */
+.module-secondary {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: auto;
+  padding-top: 12px;
+  border-top: 1px solid var(--row-rule);
+}
+
+.module-secondary-title {
+  margin: 0;
+  font: 600 10px var(--font-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* Tilt, Rate, Time and Mix, as on the pedal's top row, with Output Level set apart at the end. */
+.shared-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.shared-controls-knobs {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-around;
+  align-items: flex-start;
+  gap: 16px 24px;
+}
+
 /* An Effect picker: one segment per Effect. */
 .effect-picker {
   border: 0;
@@ -315,8 +377,6 @@ button:disabled {
 
 .effect-picker-options {
   display: grid;
-  grid-auto-flow: column;
-  grid-auto-columns: 1fr;
   gap: 4px;
   padding: 4px;
   border-radius: 7px;
@@ -336,7 +396,7 @@ button:disabled {
 
 .effect-picker label.is-active {
   background: var(--module);
-  color: var(--card);
+  color: var(--on-module);
 }
 
 /* Invisible but covering its label, so the radio itself is what a click lands on. */
@@ -364,6 +424,11 @@ button:disabled {
   flex-direction: column;
   align-items: center;
   gap: 8px;
+}
+
+.knob-small {
+  --knob-size: 64px;
+  --knob-ring: 4px;
 }
 
 .knob-dial {
@@ -410,7 +475,12 @@ button:disabled {
   background: var(--ink);
 }
 
-/* The ends of a bipolar knob's sweep, below the dial. */
+.knob-small .knob-pointer {
+  top: 5px;
+  height: 14px;
+}
+
+/* The ends of a knob's sweep, below the dial, for a control neutral at centre. */
 .knob-side {
   position: absolute;
   bottom: -2px;
@@ -427,7 +497,7 @@ button:disabled {
   left: 82%;
 }
 
-/* Noon, for bipolar and detented knobs. */
+/* Noon, for knobs neutral at centre. */
 .knob-noon {
   position: absolute;
   left: 50%;
@@ -450,6 +520,12 @@ button:disabled {
   font: 700 11px var(--font-sans);
   letter-spacing: 0.14em;
   text-transform: uppercase;
+  text-align: center;
+}
+
+.knob-meaning {
+  font: 500 11px var(--font-sans);
+  color: var(--text-2);
   text-align: center;
 }
 

@@ -1,0 +1,148 @@
+import { expect, test, type Page } from '@playwright/test';
+
+// The four Modules and the shared controls: every edit reaches the Virtual Pedal as it happens, and each control reads
+// in the pedal's own terms for the Effect selected.
+
+const pedalOf = (page: Page) => page.getByRole('region', { name: 'Virtual Pedal' });
+const lastLogged = (page: Page) => pedalOf(page).getByRole('log').getByRole('listitem').last();
+
+test('choosing Howl and dragging Amount reach the Virtual Pedal', async ({ page }) => {
+  await page.goto('./');
+  const character = page.getByRole('region', { name: 'Character' });
+  const pedal = pedalOf(page);
+  const last = lastLogged(page);
+
+  const effect = character.getByRole('group', { name: 'Effect' });
+  const effects = ['Drive', 'Sweeten', 'Fuzz', 'Howl', 'Swell'];
+  await expect(effect.getByRole('radio')).toHaveCount(effects.length);
+  for (const [i, name] of effects.entries()) await expect(effect.getByRole('radio').nth(i)).toHaveAccessibleName(name);
+  await expect(effect.getByRole('radio', { name: 'Drive' })).toBeChecked();
+
+  await effect.getByRole('radio', { name: 'Howl' }).check();
+  await expect(last).toHaveText('CC 16 = 76 → Character → Howl');
+  await expect(pedal.getByLabel('Character Effect', { exact: true })).toHaveText('Howl');
+
+  const amount = character.getByRole('slider', { name: 'Amount' });
+  await expect(amount).toHaveAttribute('aria-valuenow', '64');
+  const box = (await amount.boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2 + 40, box.y + box.height / 2, { steps: 10 });
+  await page.mouse.up();
+
+  const value = Number(await amount.getAttribute('aria-valuenow'));
+  expect(value).toBeGreaterThan(64);
+  await expect(pedal.getByLabel('Character Amount')).toHaveText(String(value));
+  await expect(last).toHaveText(`CC 65 = ${value} → Character → Amount`);
+  await expect(pedal.getByLabel('Character Effect', { exact: true })).toHaveText('Howl');
+
+  // Holding ⇧ moves it far less for the same drag.
+  await page.keyboard.down('Shift');
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2 + 40, box.y + box.height / 2, { steps: 10 });
+  await page.mouse.up();
+  await page.keyboard.up('Shift');
+  const fine = Number(await amount.getAttribute('aria-valuenow'));
+  expect(fine - value).toBeGreaterThan(0);
+  expect(fine - value).toBeLessThan(value - 64);
+});
+
+test('Sensitivity, a Character Secondary Control, reads neutral at centre and resets there on double-click', async ({ page }) => {
+  await page.goto('./');
+  const sensitivity = page.getByRole('region', { name: 'Character' }).getByRole('slider', { name: 'Sensitivity' });
+
+  await expect(sensitivity).toHaveAttribute('aria-valuetext', 'neutral');
+  await sensitivity.press('PageUp');
+  await expect(sensitivity).toHaveAttribute('aria-valuetext', '+16%');
+  await expect(lastLogged(page)).toHaveText('CC 72 = 74 → Character → Sensitivity');
+
+  await sensitivity.dblclick();
+  await expect(sensitivity).toHaveAttribute('aria-valuetext', 'neutral');
+  await expect(lastLogged(page)).toHaveText('CC 72 = 64 → Character → Sensitivity');
+});
+
+test('under Pitch, the Movement Rate reads in octaves, and Drift is sent', async ({ page }) => {
+  await page.goto('./');
+  const movement = page.getByRole('region', { name: 'Movement' });
+  const rate = page.getByRole('region', { name: 'Shared controls' }).getByRole('slider', { name: 'Rate' });
+
+  await expect(rate).toHaveAttribute('aria-valuetext', '50%');
+  await expect(rate).toHaveAccessibleDescription('doubling time');
+
+  await movement.getByRole('group', { name: 'Effect' }).getByRole('radio', { name: 'Pitch' }).check();
+  await expect(lastLogged(page)).toHaveText('CC 17 = 98 → Movement → Pitch');
+  await expect(rate).toHaveAttribute('aria-valuetext', '0 oct');
+  await expect(rate).toHaveAccessibleDescription('pitch');
+
+  await rate.press('End');
+  await expect(rate).toHaveAttribute('aria-valuetext', '+1 oct');
+  await expect(lastLogged(page)).toHaveText('CC 66 = 127 → Movement → Rate');
+  await expect(pedalOf(page).getByLabel('Movement Rate')).toHaveText('127');
+
+  const drift = movement.getByRole('slider', { name: 'Drift' });
+  await expect(drift).toHaveAttribute('aria-valuetext', '0%');
+  await drift.press('ArrowUp');
+  await expect(lastLogged(page)).toHaveText('CC 74 = 1 → Movement → Drift');
+});
+
+test('Diffusion’s Amount and Effect Vol take the arrow keys', async ({ page }) => {
+  await page.goto('./');
+  const diffusion = page.getByRole('region', { name: 'Diffusion' });
+
+  await diffusion.getByRole('group', { name: 'Effect' }).getByRole('radio', { name: 'Space' }).check();
+  await expect(lastLogged(page)).toHaveText('CC 18 = 54 → Diffusion → Space');
+
+  await diffusion.getByRole('slider', { name: 'Amount' }).press('ArrowDown');
+  await expect(lastLogged(page)).toHaveText('CC 69 = 63 → Diffusion → Amount');
+
+  const effectVol = diffusion.getByRole('slider', { name: 'Effect Vol' });
+  await effectVol.press('Home');
+  await expect(effectVol).toHaveAttribute('aria-valuetext', '−100%');
+  await expect(lastLogged(page)).toHaveText('CC 77 = 0 → Diffusion → Effect Vol');
+});
+
+test('Texture’s Amount turns with the mouse wheel', async ({ page }) => {
+  await page.goto('./');
+  const texture = page.getByRole('region', { name: 'Texture' });
+
+  await texture.getByRole('group', { name: 'Effect' }).getByRole('radio', { name: 'Interference' }).check();
+  await expect(lastLogged(page)).toHaveText('CC 19 = 98 → Texture → Interference');
+
+  const amount = texture.getByRole('slider', { name: 'Amount' });
+  await amount.hover();
+  await page.mouse.wheel(0, -100);
+  await expect(amount).toHaveAttribute('aria-valuenow', '65');
+  await expect(lastLogged(page)).toHaveText('CC 71 = 65 → Texture → Amount');
+
+  await texture.getByRole('slider', { name: 'Effect Vol' }).press('ArrowRight');
+  await expect(lastLogged(page)).toHaveText('CC 79 = 65 → Texture → Effect Vol');
+});
+
+test('Tilt, Time, Mix and Output Level on the shared strip', async ({ page }) => {
+  await page.goto('./');
+  const shared = page.getByRole('region', { name: 'Shared controls' });
+  const tilt = shared.getByRole('slider', { name: 'Tilt' });
+
+  await expect(tilt).toHaveAttribute('aria-valuetext', 'neutral');
+  await tilt.press('ArrowLeft');
+  await expect(tilt).toHaveAttribute('aria-valuenow', '63');
+  await expect(tilt).toHaveAttribute('aria-valuetext', '−2%');
+  await expect(pedalOf(page).getByLabel('Character Tilt')).toHaveText('63');
+  await tilt.dblclick();
+  await expect(tilt).toHaveAttribute('aria-valuenow', '64');
+  await expect(pedalOf(page).getByLabel('Character Tilt')).toHaveText('64');
+
+  await shared.getByRole('slider', { name: 'Time' }).press('ArrowUp');
+  await expect(lastLogged(page)).toHaveText('CC 68 = 65 → Diffusion → Time');
+
+  const mix = shared.getByRole('slider', { name: 'Mix' });
+  await expect(mix).toHaveAttribute('aria-valuetext', '100%');
+  await mix.press('Home');
+  await expect(lastLogged(page)).toHaveText('CC 70 = 0 → Texture → Mix');
+  await mix.dblclick();
+  await expect(mix).toHaveAttribute('aria-valuetext', '100%');
+
+  await shared.getByRole('slider', { name: 'Output Level' }).press('ArrowDown');
+  await expect(lastLogged(page)).toHaveText('CC 78 = 63 → Output Level');
+});
