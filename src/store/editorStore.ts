@@ -41,6 +41,12 @@ type EditorStore = {
   perform<C extends PerformanceControlId>(control: C, action: PerformanceActionId<C>): void;
   /** Sets the pedal-wide Calibration Level and sends it. */
   setCalibrationLevel(level: CalibrationLevelId): void;
+  /** Starts a knob drag: every edit until `endDrag` undoes as one step. */
+  beginDrag(): void;
+  endDrag(): void;
+  /** Steps back through Working State edits, re-sending what each restores so the pedal matches the screen. */
+  undo(): void;
+  redo(): void;
   webMidi: WebMidi | null;
   webMidiStatus: WebMidiStatus;
   /** Virtual Pedal first, then every connected Web MIDI output. */
@@ -129,6 +135,18 @@ export function createEditorStore(virtualPedal: VirtualPedal) {
       },
       setCalibrationLevel(level) {
         apply({ type: 'setCalibrationLevel', level });
+      },
+      beginDrag() {
+        apply({ type: 'beginDrag' });
+      },
+      endDrag() {
+        apply({ type: 'endDrag' });
+      },
+      undo() {
+        apply({ type: 'undo' });
+      },
+      redo() {
+        apply({ type: 'redo' });
       },
       webMidi: null,
       webMidiStatus: 'pending',

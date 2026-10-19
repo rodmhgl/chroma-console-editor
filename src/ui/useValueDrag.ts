@@ -1,5 +1,6 @@
 import { useEffect, useRef, type KeyboardEvent, type PointerEvent } from 'react';
 import { clampToParam, type ParamDef } from '../midi/map';
+import { useEditorStore } from '../store/editorStore';
 
 /** Value units per pixel dragged; ⇧ for fine adjustment. */
 const DRAG_UNITS_PER_PX = 0.55;
@@ -8,7 +9,7 @@ const PAGE_STEP = 10;
 
 /**
  * Pointer, wheel and keyboard input for a 0–127 control: drag right or up to raise, ⇧ for fine,
- * double-click to reset to the detent or default, arrows/Page/Home/End when focused.
+ * double-click to reset to the detent or default, arrows/Page/Home/End when focused. A drag undoes as one step.
  */
 export function useValueDrag<T extends HTMLElement>(param: ParamDef, value: number, onChange: (value: number) => void) {
   const drag = useRef<{ x: number; y: number; value: number } | null>(null);
@@ -33,11 +34,17 @@ export function useValueDrag<T extends HTMLElement>(param: ParamDef, value: numb
       change(latest.current.value + (e.deltaY < 0 ? 1 : -1));
     };
     el.addEventListener('wheel', onWheel, { passive: false });
-    return () => el.removeEventListener('wheel', onWheel);
+    return () => {
+      el.removeEventListener('wheel', onWheel);
+      // Unmounted mid-drag: end the drag, or every later edit would merge into it.
+      endDrag();
+    };
   }, []);
 
   const endDrag = () => {
+    if (!drag.current) return;
     drag.current = null;
+    useEditorStore.getState().endDrag();
   };
 
   return {
@@ -46,6 +53,7 @@ export function useValueDrag<T extends HTMLElement>(param: ParamDef, value: numb
       if (e.button !== 0) return;
       e.currentTarget.setPointerCapture(e.pointerId);
       drag.current = { x: e.clientX, y: e.clientY, value };
+      useEditorStore.getState().beginDrag();
     },
     onPointerMove(e: PointerEvent<T>) {
       if (!drag.current) return;
@@ -54,6 +62,8 @@ export function useValueDrag<T extends HTMLElement>(param: ParamDef, value: numb
     },
     onPointerUp: endDrag,
     onPointerCancel: endDrag,
+    // Capture lost without a pointerup (the element went away, say) still ends the drag.
+    onLostPointerCapture: endDrag,
     onDoubleClick() {
       change(param.detent ?? param.default);
     },

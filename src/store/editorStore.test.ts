@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { VIRTUAL_PEDAL_PORT, createVirtualPedal } from '../midi/transport/virtual';
+import { canRedo, canUndo } from '../model/history';
 import { createEditorStore } from './editorStore';
 
 type FakeOutput = { id: string; name: string; type: 'output'; state: string; send: (b: number[]) => void };
@@ -230,5 +231,60 @@ describe('editor store Raw MIDI', () => {
     store.getState().clearSent();
 
     expect(store.getState().sent).toEqual([]);
+  });
+});
+
+describe('editor store undo/redo', () => {
+  afterEach(() => vi.useRealTimers());
+
+  it('undoes and redoes Working State edits, sending each result to the pedal', () => {
+    const pedal = createVirtualPedal();
+    const store = createEditorStore(pedal);
+    expect(canUndo(store.getState().editor.history)).toBe(false);
+
+    store.getState().selectEffect('characterEffect', 'howl');
+    store.getState().setEngaged('texture', false);
+    expect(canUndo(store.getState().editor.history)).toBe(true);
+
+    store.getState().undo();
+    store.getState().undo();
+    expect(pedal.getSnapshot().state).toMatchObject({ characterEffect: 10, textureEngaged: 127 });
+    expect(store.getState().editor.working).toMatchObject({ characterEffect: 10, textureEngaged: 127 });
+    expect(canUndo(store.getState().editor.history)).toBe(false);
+    expect(canRedo(store.getState().editor.history)).toBe(true);
+
+    store.getState().redo();
+    store.getState().redo();
+    expect(pedal.getSnapshot().state).toMatchObject({ characterEffect: 76, textureEngaged: 0 });
+    expect(canRedo(store.getState().editor.history)).toBe(false);
+  });
+
+  it('undoes a knob drag as one step, after its last throttled value has gone out', () => {
+    vi.useFakeTimers();
+    const pedal = createVirtualPedal();
+    const store = createEditorStore(pedal);
+
+    store.getState().beginDrag();
+    for (let v = 65; v <= 100; v++) store.getState().setParam('characterAmount', v);
+    store.getState().endDrag();
+    store.getState().undo();
+    vi.runAllTimers();
+
+    expect(store.getState().editor.working.characterAmount).toBe(64);
+    expect(pedal.getSnapshot().state.characterAmount).toBe(64);
+    expect(canUndo(store.getState().editor.history)).toBe(false);
+  });
+
+  it('sends nothing with nothing to undo or redo, and never undoes the MIDI channel or Raw MIDI', () => {
+    const pedal = createVirtualPedal();
+    const store = createEditorStore(pedal);
+    store.getState().setMidiChannel(3);
+    store.getState().sendRaw([0xb0, 64, 10]);
+
+    store.getState().undo();
+    store.getState().redo();
+
+    expect(pedal.getSnapshot().log.map((e) => e.text)).toEqual(['CC 64 = 10 → Character → Tilt']);
+    expect(store.getState().editor.global.midiChannel).toBe(3);
   });
 });
