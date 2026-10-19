@@ -1,18 +1,27 @@
 import { useEffect, useId } from 'react';
+import { SYNC_STATUS_LABELS, type SyncStatus } from '../model/sync';
 import { UPDATE_WAITING_HELP, useAppStore } from '../store/appStore';
 import { useEditorStore } from '../store/editorStore';
 import { useLayoutStore } from '../store/layoutStore';
 import { DATA_BUTTON_ID, DATA_DRAWER_ID } from './domIds';
 import { MIDI_CHANNELS, midiChannelLabel } from './midiChannels';
+import { commandKeys } from './useShortcuts';
 
 /** How to find the pedal's own MIDI channel, for when edits aren't heard. */
 export const MIDI_CHANNEL_HINT =
   'Must match the pedal’s. To check it, press A, B, C and D together to open the pedal’s Global Settings: the TILT knob sets its MIDI channel (1 by default).';
 
-/** The top bar: output, MIDI channel, connection indicator and the Data drawer button. */
+const SYNC_STATUS_HELP: Record<SyncStatus, string> = {
+  inSync: 'The pedal should be sounding what the editor shows: everything was sent. Touching the pedal’s own controls isn’t detected.',
+  possiblyStale: 'Since connecting, a MIDI channel change, Raw MIDI or a failed send, the pedal may hold anything. Send All to match it.',
+  unknown: 'No output is connected, so nothing reaches the pedal.',
+};
+
+/** The top bar: Sync Status, output, MIDI channel, connection indicator, Send All and the Data drawer button. */
 export function ConnectionBar() {
-  const { outputs, outputId, editor, setOutput, setMidiChannel, connectWebMidi } = useEditorStore();
+  const { outputs, outputId, editor, setOutput, setMidiChannel, sendAll, canSendAll, connectWebMidi } = useEditorStore();
   const { midiChannel } = editor.global;
+  const sendAllKeys = commandKeys('E');
   const drawerOpen = useLayoutStore((s) => s.drawerOpen);
   const toggleDrawer = useLayoutStore((s) => s.toggleDrawer);
   // Subscribing to `outputs` above re-renders this on every hot-plug, which re-reads the connection state.
@@ -31,6 +40,9 @@ export function ConnectionBar() {
       <h1 className="wordmark">
         Chroma Console<span> / Editor</span>
       </h1>
+      <output className={`sync-pill is-${editor.sync}`} aria-label="Sync Status" title={SYNC_STATUS_HELP[editor.sync]}>
+        {SYNC_STATUS_LABELS[editor.sync]}
+      </output>
       <UpdatePill />
       <div className="connection">
         <output
@@ -67,6 +79,16 @@ export function ConnectionBar() {
         </span>
       </div>
       <div className="top-actions">
+        <button
+          type="button"
+          className="bar-button"
+          disabled={!canSendAll()}
+          aria-keyshortcuts={sendAllKeys.aria}
+          title={`Sends every MIDI-reachable setting of the Working State to the pedal, so the two match. Shortcut: ${sendAllKeys.label}`}
+          onClick={() => void sendAll()}
+        >
+          Send All
+        </button>
         <button
           id={DATA_BUTTON_ID}
           type="button"

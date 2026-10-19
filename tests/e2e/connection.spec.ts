@@ -75,6 +75,26 @@ test('the output list follows hot-plugging, selecting the pedal when it is plugg
   await expect(page.getByLabel('Connection status')).toHaveText('Connected');
 });
 
+test('the Sync Status is Unknown while the selected output is unplugged, and Possibly Stale once it is back', async ({ page }) => {
+  await withSimulatedOutputs(page, [{ id: 'usb', name: PEDAL_NAME }]);
+  await page.goto('./');
+  const connection = page.getByRole('banner', { name: 'Connection' });
+  const syncStatus = connection.getByLabel('Sync Status');
+  const sendAll = connection.getByRole('button', { name: 'Send All' });
+
+  await expect(connection.getByLabel('MIDI output')).toHaveValue('usb');
+  await sendAll.click();
+  await expect(syncStatus).toHaveText('In Sync');
+
+  await unplug(page, 'usb');
+  await expect(syncStatus).toHaveText('Unknown');
+  await expect(sendAll).toBeDisabled();
+
+  await plug(page, 'usb', PEDAL_NAME);
+  await expect(syncStatus).toHaveText('Possibly Stale');
+  await expect(sendAll).toBeEnabled();
+});
+
 test('the MIDI channel is 1 by default, any of 1–16, with a hint on checking it on the pedal', async ({ page }) => {
   await page.goto('./');
   const midiChannel = page.getByRole('banner', { name: 'Connection' }).getByLabel('MIDI channel');
