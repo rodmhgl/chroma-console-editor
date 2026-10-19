@@ -44,6 +44,16 @@ export function record(h: History, id: PresetParamId, before: number, after: num
   return { ...h, past, future: [], merging: h.dragging };
 }
 
+/** Records a change to many controls at once, such as adopting a Snapshot, as one step of every control it changed. */
+export function recordAll(h: History, before: WorkingState, after: WorkingState): History {
+  const step: Step = {};
+  for (const id of Object.keys(after) as PresetParamId[]) {
+    if (before[id] !== after[id]) step[id] = { before: before[id], after: after[id] };
+  }
+  if (Object.keys(step).length === 0) return h;
+  return { ...h, past: [...h.past, step].slice(-HISTORY_LIMIT), future: [], merging: false };
+}
+
 export function beginDrag(h: History): History {
   return { ...h, dragging: true, merging: false };
 }

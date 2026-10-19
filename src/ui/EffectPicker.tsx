@@ -1,4 +1,5 @@
 import { PARAMS, type ChoiceDef, type ChoiceId, type ChoiceParamId, type EffectColour, type EffectDef, type EffectId, type EffectParamId } from '../midi/map';
+import { shownState } from '../model/core';
 import { useEditorStore } from '../store/editorStore';
 
 type PickerProps<Id extends string> = {
@@ -68,7 +69,7 @@ export function EffectPicker<P extends EffectParamId>({ id, value, onSelect }: P
 /** An FX Setup control such as Filter style, read and sent through the editor store. */
 export function ChoicePicker<P extends ChoiceParamId>({ id }: { id: P }) {
   const param = PARAMS[id];
-  const value = useEditorStore((s) => s.editor.working[id]);
+  const value = useEditorStore((s) => shownState(s.editor)[id]);
   const selectChoice = useEditorStore((s) => s.selectChoice);
   return (
     <Picker

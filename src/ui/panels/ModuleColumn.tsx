@@ -13,6 +13,7 @@ import {
   type LevelParamId,
   type ModuleId,
 } from '../../midi/map';
+import { shownState } from '../../model/core';
 import { useEditorStore } from '../../store/editorStore';
 import { ChoicePicker, EffectPicker } from '../EffectPicker';
 import { ControlKnob } from '../Knob';
@@ -33,7 +34,7 @@ const MODULE_ORDER_HELP = `${PARAMS.moduleOrder.help} Drag a Module by its handl
  * Order is a Pedal Step setting, so reordering sends nothing.
  */
 export function Modules() {
-  const index = useEditorStore((s) => s.editor.working.moduleOrder);
+  const index = useEditorStore((s) => shownState(s.editor).moduleOrder);
   const setModuleOrder = useEditorStore((s) => s.setModuleOrder);
   const [dragging, setDragging] = useState<ModuleId | null>(null);
   const order = moduleOrderAt(index);
@@ -88,9 +89,9 @@ type ModuleColumnProps = {
  */
 function ModuleColumn({ module, position, dragging, onDragChange, onMove }: ModuleColumnProps) {
   const { effect, amount, secondary } = COLUMNS[module];
-  const effectValue = useEditorStore((s) => s.editor.working[effect]);
+  const effectValue = useEditorStore((s) => shownState(s.editor)[effect]);
   const colour = effectAt(PARAMS[effect], effectValue)?.colour;
-  const bypassed = useEditorStore((s) => !isEngaged(s.editor.working, module));
+  const bypassed = useEditorStore((s) => !isEngaged(shownState(s.editor), module));
   const selectEffect = useEditorStore((s) => s.selectEffect);
   const headingId = `module-${module}-heading`;
 
@@ -168,7 +169,7 @@ function ModuleColumn({ module, position, dragging, onDragChange, onMove }: Modu
  * Colour while Engaged and unlit while Bypassed, like the pedal's Module button.
  */
 function EngagedSwitch({ module, colour }: { module: ModuleId; colour: EffectColour | undefined }) {
-  const engaged = useEditorStore((s) => isEngaged(s.editor.working, module));
+  const engaged = useEditorStore((s) => isEngaged(shownState(s.editor), module));
   const setEngaged = useEditorStore((s) => s.setEngaged);
   return (
     <button

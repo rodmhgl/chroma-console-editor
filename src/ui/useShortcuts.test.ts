@@ -46,6 +46,20 @@ describe('shortcutFor', () => {
     expect(shortcutFor(key('e', { ctrlKey: true, shiftKey: true }), PC)).toBeNull();
   });
 
+  it('is ⌘K to take a Snapshot, ⌘B to flip A/B, ⌘U to adopt it and ⌘⌫ to discard it, Ctrl elsewhere', () => {
+    expect(shortcutFor(key('k', { metaKey: true }), MAC)).toEqual({ type: 'takeSnapshot' });
+    expect(shortcutFor(key('b', { metaKey: true }), MAC)).toEqual({ type: 'flipAB' });
+    expect(shortcutFor(key('u', { metaKey: true }), MAC)).toEqual({ type: 'adoptSnapshot' });
+    expect(shortcutFor(key('Backspace', { metaKey: true }), MAC)).toEqual({ type: 'discardSnapshot' });
+    expect(shortcutFor(key('B', { ctrlKey: true }), PC)).toEqual({ type: 'flipAB' });
+    expect(shortcutFor(key('Backspace', { ctrlKey: true }), PC)).toEqual({ type: 'discardSnapshot' });
+  });
+
+  it('doesn’t repeat a Snapshot shortcut while held, so a held ⌘B flips once', () => {
+    expect(shortcutFor(key('b', { metaKey: true, repeat: true }), MAC)).toBeNull();
+    expect(shortcutFor(key('k', { ctrlKey: true, shiftKey: true }), PC)).toBeNull();
+  });
+
   it('ignores other keys and modifiers', () => {
     expect(shortcutFor(key('z'), PC)).toBeNull();
     expect(shortcutFor(key('e'), PC)).toBeNull();

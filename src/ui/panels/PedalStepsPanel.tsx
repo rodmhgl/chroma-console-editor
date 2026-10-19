@@ -1,5 +1,5 @@
 import { pedalStep, type PedalStepParamId } from '../../midi/map';
-import { unconfirmedPedalSteps } from '../../model/core';
+import { shownState, unconfirmedPedalSteps } from '../../model/core';
 import { useEditorStore } from '../../store/editorStore';
 import { PedalStepDiagram } from '../PedalStepDiagram';
 
@@ -8,9 +8,7 @@ import { PedalStepDiagram } from '../PedalStepDiagram';
  * Marking one done tells the editor the pedal now matches.
  */
 export function PedalStepsPanel() {
-  const working = useEditorStore((s) => s.editor.working);
-  const confirmed = useEditorStore((s) => s.editor.confirmed);
-  const ids = unconfirmedPedalSteps({ working, confirmed });
+  const ids = unconfirmedPedalSteps(useEditorStore((s) => s.editor));
   if (ids.length === 0) return null;
   return (
     <section className="card pedal-steps" aria-labelledby="pedal-steps-heading">
@@ -26,9 +24,9 @@ export function PedalStepsPanel() {
 }
 
 function PedalStepCard({ id }: { id: PedalStepParamId }) {
-  const working = useEditorStore((s) => s.editor.working);
+  const shown = useEditorStore((s) => shownState(s.editor));
   const confirmPedalStep = useEditorStore((s) => s.confirmPedalStep);
-  const step = pedalStep(id, working);
+  const step = pedalStep(id, shown);
   const headingId = `pedal-step-${id}-heading`;
   return (
     <div className="pedal-step" role="group" aria-labelledby={headingId}>

@@ -3,16 +3,25 @@ import { useEditorStore } from '../store/editorStore';
 
 type KeyLike = Pick<KeyboardEvent, 'key' | 'metaKey' | 'ctrlKey' | 'shiftKey' | 'altKey' | 'repeat'>;
 
-export type Shortcut = { type: 'undo' | 'redo' | 'sendAll' };
+export type Shortcut = { type: 'undo' | 'redo' | 'sendAll' | 'takeSnapshot' | 'flipAB' | 'adoptSnapshot' | 'discardSnapshot' };
 
-/** ⌘ (Ctrl elsewhere) + key, without ⇧. A/B flip and Snapshot join them later (SPEC.md story 82). */
-const COMMANDS: Record<string, Shortcut['type']> = { e: 'sendAll' };
+/** ⌘ (Ctrl elsewhere) + key, without ⇧: K keeps a Snapshot, B flips A/B, U uses the Snapshot, ⌫ discards it. */
+const COMMANDS: Record<string, Shortcut['type']> = {
+  e: 'sendAll',
+  k: 'takeSnapshot',
+  b: 'flipAB',
+  u: 'adoptSnapshot',
+  backspace: 'discardSnapshot',
+};
 
 /** Fields whose own text undo ⌘Z should reach instead. */
 const TEXT_EDIT = 'input:not([type="checkbox"], [type="radio"], [type="range"], [type="button"]), textarea, [contenteditable]';
 
-/** Where a shortcut belongs to the focused field instead. ⌘E means nothing to a field, so it works everywhere. */
-const TEXT_OWNS: Partial<Record<Shortcut['type'], string>> = { undo: TEXT_EDIT, redo: TEXT_EDIT };
+/**
+ * Where a shortcut belongs to the focused field instead: ⌘⌫ deletes text in one. ⌘E and the other letters mean nothing
+ * to a field, so they work everywhere.
+ */
+const TEXT_OWNS: Partial<Record<Shortcut['type'], string>> = { undo: TEXT_EDIT, redo: TEXT_EDIT, discardSnapshot: TEXT_EDIT };
 
 /**
  * The editor's keyboard shortcuts (SPEC.md story 82), with ⌘ on a Mac and Ctrl elsewhere, where Ctrl+Y redoes too.
@@ -33,10 +42,10 @@ const commandLabel = (key: string, mac: boolean) => (mac ? `⌘${key}` : `Ctrl+$
 
 const isMac = () => /Mac|iPhone|iPad/.test(navigator.userAgent);
 
-/** A ⌘ (Ctrl elsewhere) shortcut, for `aria-keyshortcuts` and to show in a tooltip. */
-export function commandKeys(key: string): { aria: string; label: string } {
+/** A ⌘ (Ctrl elsewhere) shortcut, for `aria-keyshortcuts` and to show in a tooltip as `label`. */
+export function commandKeys(key: string, label = key): { aria: string; label: string } {
   const mac = isMac();
-  return { aria: `${mac ? 'Meta' : 'Control'}+${key}`, label: commandLabel(key, mac) };
+  return { aria: `${mac ? 'Meta' : 'Control'}+${key}`, label: commandLabel(label, mac) };
 }
 
 function run(shortcut: Shortcut) {
@@ -48,6 +57,11 @@ function run(shortcut: Shortcut) {
     case 'sendAll':
       if (editor.canSendAll()) void editor.sendAll();
       return;
+    case 'takeSnapshot':
+    case 'flipAB':
+    case 'adoptSnapshot':
+    case 'discardSnapshot':
+      return editor[shortcut.type]();
   }
 }
 

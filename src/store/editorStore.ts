@@ -59,6 +59,14 @@ type EditorStore = {
   /** Steps back through Working State edits, re-sending what each restores so the pedal matches the screen. */
   undo(): void;
   redo(): void;
+  /** Freezes a copy of the Working State to A/B against, replacing any Snapshot. */
+  takeSnapshot(): void;
+  /** Flips between the Snapshot and the Working State, sending what differs so the two can be compared by ear. */
+  flipAB(): void;
+  /** Makes the Snapshot the Working State, as one undo step. */
+  adoptSnapshot(): void;
+  /** Drops the Snapshot, flipping back to the Working State if it was showing. */
+  discardSnapshot(): void;
   /**
    * Sends every MIDI-reachable setting of the Working State, `sendGapMs` apart, then makes the Sync Status In Sync.
    * Resolves false if it was abandoned part-way: the output changed, a send failed, or another Send All began.
@@ -210,6 +218,18 @@ export function createEditorStore(virtualPedal: VirtualPedal) {
       },
       redo() {
         apply({ type: 'redo' });
+      },
+      takeSnapshot() {
+        apply({ type: 'takeSnapshot' });
+      },
+      flipAB() {
+        apply({ type: 'flipAB' });
+      },
+      adoptSnapshot() {
+        apply({ type: 'adoptSnapshot' });
+      },
+      discardSnapshot() {
+        apply({ type: 'discardSnapshot' });
       },
       loadWorking(working) {
         apply({ type: 'loadWorking', working });

@@ -1,6 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { CALIBRATION_LEVEL, PARAMS, PERFORMANCE_CONTROLS, moduleOrderOf, type ParamDef } from '../midi/map';
-import { dispatch, encodeSendAll, initialEditorState, syncStatus, unconfirmedPedalSteps, type EditorAction, type EditorState } from './core';
+import {
+  dispatch,
+  encodeSendAll,
+  inexactPedalSteps,
+  initialEditorState,
+  shownState,
+  syncStatus,
+  unconfirmedPedalSteps,
+  type EditorAction,
+  type EditorState,
+} from './core';
 
 /** Dispatches each action in turn; the messages are every action's, in order. */
 function run(state: EditorState, ...actions: EditorAction[]) {
@@ -763,5 +773,189 @@ describe('recallSlot', () => {
   it('leaves the Slot Map alone', () => {
     const before = withSlotMap();
     expect(dispatch(before, { type: 'recallSlot', slot: 0 }).state.slotMap).toBe(before.slotMap);
+  });
+});
+
+describe('Snapshot A/B', () => {
+  /** In Sync on MIDI channel 5 with a Snapshot taken, then Tilt and Character's Effect edited. */
+  const edited = () =>
+    run(
+      onMidiChannel5(),
+      { type: 'outputConnected' },
+      { type: 'sendAllFinished' },
+      { type: 'takeSnapshot' },
+      { type: 'setParam', id: 'tilt', value: 20 },
+      { type: 'selectEffect', id: 'characterEffect', effect: 'howl' },
+    ).state;
+  const snapshotWorking = initialEditorState().working;
+
+  it('takes a frozen copy of the Working State, sending nothing; later edits leave it as it was', () => {
+    const taken = run(onMidiChannel5(), { type: 'takeSnapshot' });
+    expect(taken.messages).toEqual([]);
+    expect(taken.state.snapshot).toEqual({ state: snapshotWorking, showing: false });
+
+    expect(edited().snapshot?.state).toEqual(snapshotWorking);
+    expect(shownState(edited())).toEqual(edited().working);
+  });
+
+  it('flips to the Snapshot sending only the values that differ, in Send All order, and back again', () => {
+    const toA = dispatch(edited(), { type: 'flipAB' });
+    expect(toA.messages).toEqual([
+      [0xb4, 16, 10],
+      [0xb4, 64, 64],
+    ]);
+    expect(shownState(toA.state)).toEqual(snapshotWorking);
+    expect(toA.state.snapshot?.showing).toBe(true);
+    // The Working State is still the edits, kept for flipping back.
+    expect(toA.state.working.tilt).toBe(20);
+
+    const toB = dispatch(toA.state, { type: 'flipAB' });
+    expect(toB.messages).toEqual([
+      [0xb4, 16, 76],
+      [0xb4, 64, 20],
+    ]);
+    expect(shownState(toB.state)).toEqual(edited().working);
+  });
+
+  it('sends nothing when the Snapshot and the Working State are the same', () => {
+    const state = run(onMidiChannel5(), { type: 'takeSnapshot' }).state;
+    expect(dispatch(state, { type: 'flipAB' }).messages).toEqual([]);
+  });
+
+  it('says Bypassed again when a flip changes a Bypassed Module’s Effect, in case the pedal engaged it', () => {
+    const state = run(
+      onMidiChannel5(),
+      { type: 'setEngaged', module: 'movement', engaged: false },
+      { type: 'takeSnapshot' },
+      { type: 'selectEffect', id: 'movementEffect', effect: 'phaser' },
+    ).state;
+
+    expect(dispatch(state, { type: 'flipAB' }).messages).toEqual([
+      [0xb4, 17, 10],
+      [0xb4, 104, 0],
+    ]);
+  });
+
+  it('keeps the Sync Status: a flip is live sends', () => {
+    const state = dispatch(edited(), { type: 'flipAB' }).state;
+    expect(syncStatus(state)).toBe('inSync');
+
+    const stale = run(onMidiChannel5(), { type: 'outputConnected' }, { type: 'takeSnapshot' }, { type: 'setParam', id: 'mix', value: 3 }).state;
+    expect(syncStatus(dispatch(stale, { type: 'flipAB' }).state)).toBe('possiblyStale');
+  });
+
+  it('ignores every edit and undo while the Snapshot is showing, so it stays frozen', () => {
+    const showing = dispatch(edited(), { type: 'flipAB' }).state;
+    const edits: EditorAction[] = [
+      { type: 'setParam', id: 'mix', value: 3 },
+      { type: 'selectEffect', id: 'textureEffect', effect: 'squash' },
+      { type: 'setEngaged', module: 'texture', engaged: false },
+      { type: 'selectChoice', id: 'filterStyle', choice: 'lowpass' },
+      { type: 'setModuleOrder', order: ['texture', 'diffusion', 'movement', 'character'] },
+      { type: 'undo' },
+      { type: 'redo' },
+      { type: 'takeSnapshot' },
+    ];
+    for (const action of edits) expect(dispatch(showing, action)).toEqual({ state: showing, messages: [] });
+  });
+
+  it('sends no bytes for a Pedal Step setting that differs, and says the comparison isn’t exact for it', () => {
+    const state = run(
+      edited(),
+      { type: 'setModuleOrder', order: ['texture', 'diffusion', 'movement', 'character'] },
+      { type: 'confirmPedalStep', id: 'moduleOrder' },
+    ).state;
+    expect(inexactPedalSteps(state)).toEqual(['moduleOrder']);
+    expect(inexactPedalSteps(edited())).toEqual([]);
+
+    const toA = dispatch(state, { type: 'flipAB' });
+    expect(toA.messages).toEqual([
+      [0xb4, 16, 10],
+      [0xb4, 64, 64],
+    ]);
+    // The pedal still has the Working State's Module Order, not the Snapshot's.
+    expect(unconfirmedPedalSteps(toA.state)).toEqual(['moduleOrder']);
+    expect(syncStatus(toA.state)).toBe('possiblyStale');
+    expect(syncStatus(dispatch(toA.state, { type: 'flipAB' }).state)).toBe('inSync');
+  });
+
+  it('confirms the Snapshot’s Pedal Step setting while it is showing, as that is what the pedal now has', () => {
+    const state = run(
+      onMidiChannel5(),
+      { type: 'takeSnapshot' },
+      { type: 'setModuleOrder', order: ['texture', 'diffusion', 'movement', 'character'] },
+      { type: 'confirmPedalStep', id: 'moduleOrder' },
+      { type: 'flipAB' },
+      { type: 'confirmPedalStep', id: 'moduleOrder' },
+    ).state;
+    expect(state.confirmed.moduleOrder).toBe(0);
+    expect(unconfirmedPedalSteps(state)).toEqual([]);
+  });
+
+  it('Sends All the Snapshot while it is showing', () => {
+    const showing = dispatch(edited(), { type: 'flipAB' }).state;
+    expect(encodeSendAll(showing)).toEqual(encodeSendAll(onMidiChannel5()));
+  });
+
+  it('adopts the Snapshot as the Working State, sending what differs, as one step undo can take back', () => {
+    const adopted = dispatch(edited(), { type: 'adoptSnapshot' });
+    expect(adopted.messages).toEqual([
+      [0xb4, 16, 10],
+      [0xb4, 64, 64],
+    ]);
+    expect(adopted.state.working).toEqual(snapshotWorking);
+    expect(adopted.state.snapshot).toBeNull();
+    expect(syncStatus(adopted.state)).toBe('inSync');
+
+    const undone = dispatch(adopted.state, { type: 'undo' });
+    expect(undone.state.working).toEqual(edited().working);
+    expect(undone.messages).toEqual(expect.arrayContaining([[0xb4, 16, 76], [0xb4, 64, 20]]));
+  });
+
+  it('adopts the Snapshot while it is showing without sending anything: the pedal already sounds it', () => {
+    const showing = dispatch(edited(), { type: 'flipAB' }).state;
+    const adopted = dispatch(showing, { type: 'adoptSnapshot' });
+
+    expect(adopted.messages).toEqual([]);
+    expect(adopted.state.working).toEqual(snapshotWorking);
+    expect(adopted.state.snapshot).toBeNull();
+  });
+
+  it('discards the Snapshot, flipping back to the Working State first if it is showing', () => {
+    const notShowing = dispatch(edited(), { type: 'discardSnapshot' });
+    expect(notShowing.messages).toEqual([]);
+    expect(notShowing.state.snapshot).toBeNull();
+    expect(notShowing.state.working).toEqual(edited().working);
+
+    const showing = dispatch(dispatch(edited(), { type: 'flipAB' }).state, { type: 'discardSnapshot' });
+    expect(showing.messages).toEqual([
+      [0xb4, 16, 76],
+      [0xb4, 64, 20],
+    ]);
+    expect(showing.state.snapshot).toBeNull();
+    expect(shownState(showing.state)).toEqual(edited().working);
+  });
+
+  it('does nothing to flip, adopt or discard without a Snapshot', () => {
+    const state = onMidiChannel5();
+    for (const type of ['flipAB', 'adoptSnapshot', 'discardSnapshot'] as const) {
+      expect(dispatch(state, { type })).toEqual({ state, messages: [] });
+    }
+  });
+
+  it('retakes the Snapshot from the Working State when one is already held', () => {
+    const state = dispatch(edited(), { type: 'takeSnapshot' }).state;
+    expect(state.snapshot).toEqual({ state: edited().working, showing: false });
+  });
+
+  it('keeps the Snapshot when another Working State is loaded or a Slot recalled, showing the new Working State', () => {
+    const showing = dispatch(edited(), { type: 'flipAB' }).state;
+    const loaded = dispatch(showing, { type: 'loadWorking', working: { ...snapshotWorking, mix: 9 } }).state;
+    expect(loaded.snapshot).toEqual({ state: snapshotWorking, showing: false });
+    expect(shownState(loaded).mix).toBe(9);
+
+    const recalled = dispatch(showing, { type: 'recallSlot', slot: 0 }).state;
+    expect(recalled.snapshot).toEqual({ state: snapshotWorking, showing: false });
+    expect(shownState(recalled)).toEqual(edited().working);
   });
 });

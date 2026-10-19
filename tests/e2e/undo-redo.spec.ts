@@ -10,6 +10,8 @@ test('undo returns the Virtual Pedal to the value before a knob drag, and redo r
   const pedalAmount = pedalOf(page).getByLabel('Character Amount');
 
   await expect(pedalAmount).toHaveText('64');
+  // The mouse only reaches what is in view.
+  await amount.scrollIntoViewIfNeeded();
   const box = (await amount.boundingBox())!;
   const x = box.x + box.width / 2;
   const y = box.y + box.height / 2;
