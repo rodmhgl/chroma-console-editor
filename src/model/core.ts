@@ -1,6 +1,8 @@
 import { controlChange, type MidiMessage } from '../midi/encode';
 import {
+  CALIBRATION_LEVEL,
   PARAMS,
+  PERFORMANCE_CONTROLS,
   clampToParam,
   ENGAGED_PARAMS,
   isEngaged,
@@ -9,7 +11,11 @@ import {
   type EffectId,
   type EffectParamId,
   type ModuleId,
+  type CalibrationLevelId,
   type ParamDef,
+  type PerformanceActionId,
+  type PerformanceControlDef,
+  type PerformanceControlId,
   type PresetParamId,
 } from '../midi/map';
 import { defaultGlobalSettings, defaultWorkingState, type GlobalSettings, type WorkingState } from './state';
@@ -33,7 +39,11 @@ export type EditorAction =
   /** A setting such as Filter style by name: sends that choice's value. */
   | { type: 'selectChoice'; id: ChoiceParamId; choice: ChoiceId }
   /** The MIDI channel the editor sends on. Sends nothing. */
-  | { type: 'setMidiChannel'; midiChannel: number };
+  | { type: 'setMidiChannel'; midiChannel: number }
+  /** One button of a Performance Control, such as Capture → Record: sends it and changes nothing in the Editor State. */
+  | { type: 'perform'; control: PerformanceControlId; action: PerformanceActionId }
+  /** The pedal-wide Calibration Level, a Global Setting applied to every Preset. */
+  | { type: 'setCalibrationLevel'; level: CalibrationLevelId };
 
 export type CoreResult = { state: EditorState; messages: MidiMessage[] };
 
@@ -57,6 +67,20 @@ export function dispatch(state: EditorState, action: EditorAction): CoreResult {
       return selectChoice(state, action.id, action.choice);
     case 'setMidiChannel':
       return { state: { ...state, global: { ...state.global, midiChannel: action.midiChannel } }, messages: [] };
+    case 'perform': {
+      const control: PerformanceControlDef = PERFORMANCE_CONTROLS[action.control];
+      const performed = control.actions.find((a) => a.id === action.action);
+      if (!performed) return { state, messages: [] };
+      return { state, messages: [controlChange(state.global.midiChannel, performed.cc, performed.value)] };
+    }
+    case 'setCalibrationLevel': {
+      const level = CALIBRATION_LEVEL.choices.find((c) => c.id === action.level);
+      if (!level) return { state, messages: [] };
+      return {
+        state: { ...state, global: { ...state.global, calibrationLevel: level.id } },
+        messages: [controlChange(state.global.midiChannel, CALIBRATION_LEVEL.cc, level.value)],
+      };
+    }
   }
 }
 

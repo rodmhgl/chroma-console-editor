@@ -1,7 +1,18 @@
 import { create } from 'zustand';
 import { decode } from '../midi/decode';
 import type { MidiMessage } from '../midi/encode';
-import { paramByCc, type ChoiceId, type ChoiceParamId, type EffectId, type EffectParamId, type ModuleId, type PresetParamId } from '../midi/map';
+import {
+  paramByCc,
+  type CalibrationLevelId,
+  type ChoiceId,
+  type ChoiceParamId,
+  type EffectId,
+  type EffectParamId,
+  type ModuleId,
+  type PerformanceActionId,
+  type PerformanceControlId,
+  type PresetParamId,
+} from '../midi/map';
 import { createThrottle } from '../midi/throttle';
 import { pedalOutputToSelect } from '../midi/transport/ports';
 import type { MidiPort } from '../midi/transport/types';
@@ -26,6 +37,10 @@ type EditorStore = {
   setEngaged(module: ModuleId, engaged: boolean): void;
   /** Chooses a setting such as Filter style by name and sends it. */
   selectChoice<P extends ChoiceParamId>(id: P, choice: ChoiceId<P>): void;
+  /** Presses one button of a Performance Control, such as Capture → Record; sent at once, never stored. */
+  perform<C extends PerformanceControlId>(control: C, action: PerformanceActionId<C>): void;
+  /** Sets the pedal-wide Calibration Level and sends it. */
+  setCalibrationLevel(level: CalibrationLevelId): void;
   webMidi: WebMidi | null;
   webMidiStatus: WebMidiStatus;
   /** Virtual Pedal first, then every connected Web MIDI output. */
@@ -108,6 +123,12 @@ export function createEditorStore(virtualPedal: VirtualPedal) {
       },
       selectChoice(id, choice) {
         apply({ type: 'selectChoice', id, choice });
+      },
+      perform(control, action) {
+        apply({ type: 'perform', control, action });
+      },
+      setCalibrationLevel(level) {
+        apply({ type: 'setCalibrationLevel', level });
       },
       webMidi: null,
       webMidiStatus: 'pending',

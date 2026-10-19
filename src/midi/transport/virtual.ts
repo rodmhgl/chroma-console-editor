@@ -30,11 +30,13 @@ export function createVirtualPedal(midiChannel = DEFAULT_MIDI_CHANNEL): VirtualP
     else {
       const what = msg.kind === 'cc' ? `CC ${msg.cc} = ${msg.value}` : `PC ${msg.program}`;
       const param = msg.kind === 'cc' ? paramByCc(msg.cc) : undefined;
+      // Performance Controls and Calibration Level are described but leave the Preset state alone.
+      const described = msg.kind === 'cc' ? describeCc(msg.cc, msg.value) : undefined;
       if (msg.midiChannel !== snapshot.midiChannel)
         text = `${what} on MIDI channel ${msg.midiChannel} → ignored (pedal listens on MIDI channel ${snapshot.midiChannel})`;
-      else if (msg.kind === 'cc' && param) {
-        pedalState = { ...pedalState, [param.id as PresetParamId]: msg.value };
-        text = `${what} → ${describeCc(msg.cc, msg.value)}`;
+      else if (msg.kind === 'cc' && described) {
+        if (param) pedalState = { ...pedalState, [param.id as PresetParamId]: msg.value };
+        text = `${what} → ${described}`;
       } else text = `${what} → (not in MIDI map)`;
     }
     snapshot = { ...snapshot, state: pedalState, log: [...snapshot.log, { id: nextLogId++, text }] };
