@@ -129,3 +129,17 @@ The manual shows Sensitivity, Output Level and Effect Vol as neutral at centre, 
   4. Send `CC 72 = 64`, `CC 78 = 64` and `CC 73 = 64`. Does any of them change the sound after Reset?
 - **Editor assumes:** a new Preset starts with Drift at 0 (none) and Sensitivity, Output Level and every Effect Vol at 64 (neutral).
 - **Result:** _not yet run_
+
+## 11. The Module Order Pedal Step
+
+The manual says to enter FX Setup (A and D) and "tap the buttons in your desired routing sequence", after which the pedal leaves FX Setup. Which button is which Module, and how many taps does it take?
+
+- **Setup:** Reset, then `CC 16 = 54` (Character → Fuzz, loud and obvious) and `CC 18 = 32` (Diffusion → Reels), `CC 69 = 100` (long repeats). Fuzz into Reels and Reels into Fuzz sound very different.
+- **Steps:**
+  1. Press A and D together. Watch the button animation: does it light A, B, C, D in turn for the default order?
+  2. Tap D, C, B, A. Does the pedal leave FX Setup after the fourth tap, or after the third? Do the repeats now sound fuzzed (Reels before Fuzz)?
+  3. Enter FX Setup again. Does the animation now run D, C, B, A?
+  4. Enter FX Setup, tap A, then press BYPASS. Is the order left as it was (D, C, B, A)?
+  5. Save to a scratch Slot (B+C, scroll, B+C), recall another Slot then the scratch one with `PC`. Is the order saved with the Slot?
+- **Editor assumes:** buttons A, B, C and D are Character, Movement, Diffusion and Texture; the Pedal Step taps all four in the new order and the pedal then leaves FX Setup; Module Order is saved in a Slot.
+- **Result:** _not yet run_

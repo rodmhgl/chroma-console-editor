@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { CALIBRATION_LEVEL, PARAMS, PERFORMANCE_CONTROLS } from '../midi/map';
-import { dispatch, encodeSendAll, initialEditorState, type EditorAction, type EditorState } from './core';
+import { CALIBRATION_LEVEL, PARAMS, PERFORMANCE_CONTROLS, moduleOrderOf, type ParamDef } from '../midi/map';
+import { dispatch, encodeSendAll, initialEditorState, syncStatus, unconfirmedPedalSteps, type EditorAction, type EditorState } from './core';
 
 /** Dispatches each action in turn; the messages are every action's, in order. */
 function run(state: EditorState, ...actions: EditorAction[]) {
@@ -87,9 +87,12 @@ const CALIBRATION_LEVELS = [
   ['veryHigh', 111],
 ] as const;
 
+/** The settings MIDI can't reach, each covered by a no-bytes test of its own below. */
+const PEDAL_STEPS = ['moduleOrder'] as const;
+
 describe('the pedal map', () => {
-  it('has a byte test below for every row', () => {
-    const tested = [...EFFECTS.map(([id]) => id), ...LEVELS.map(([id]) => id), ...ENGAGED.map(([, id]) => id), ...CHOICES.map(([id]) => id)];
+  it('has a byte test below for every row, or a no-bytes test for a Pedal Step setting', () => {
+    const tested = [...EFFECTS.map(([id]) => id), ...LEVELS.map(([id]) => id), ...ENGAGED.map(([, id]) => id), ...CHOICES.map(([id]) => id), ...PEDAL_STEPS];
     expect(tested.sort()).toEqual(Object.keys(PARAMS).sort());
   });
 
@@ -100,7 +103,7 @@ describe('the pedal map', () => {
   });
 
   it('keeps Performance Controls and Calibration Level out of the Preset params, so Send All never sends them', () => {
-    const presetCcs = new Set(Object.values(PARAMS).map((p) => p.cc));
+    const presetCcs = new Set((Object.values(PARAMS) as ParamDef[]).map((p) => p.cc));
     const ccs = [...PERFORMANCE.map(([, , cc]) => cc), CALIBRATION_LEVEL.cc];
 
     expect(ccs.filter((cc) => presetCcs.has(cc))).toEqual([]);
@@ -344,7 +347,9 @@ describe('the initial Editor State', () => {
       textureEngaged: 127,
       filterStyle: 65,
       captureRouting: 0,
+      moduleOrder: 0,
     });
+    expect(unconfirmedPedalSteps(state)).toEqual([]);
   });
 });
 
@@ -505,10 +510,10 @@ describe('Sync Status', () => {
 
   it('is Unknown with no output, and Possibly Stale once one connects', () => {
     const state = onMidiChannel5();
-    expect(state.sync).toBe('unknown');
+    expect(syncStatus(state)).toBe('unknown');
 
     const connected = dispatch(state, { type: 'outputConnected' });
-    expect(connected.state.sync).toBe('possiblyStale');
+    expect(syncStatus(connected.state)).toBe('possiblyStale');
     expect(connected.messages).toEqual([]);
   });
 
@@ -521,30 +526,125 @@ describe('Sync Status', () => {
       { type: 'selectChoice', id: 'filterStyle', choice: 'lowpass' },
     ).state;
 
-    expect(state.sync).toBe('inSync');
+    expect(syncStatus(state)).toBe('inSync');
   });
 
   it('never earns trust from a live send it didn’t already have', () => {
     for (const start of [onMidiChannel5(), dispatch(onMidiChannel5(), { type: 'outputConnected' }).state]) {
-      expect(dispatch(start, { type: 'setParam', id: 'tilt', value: 3 }).state.sync).toBe(start.sync);
+      expect(syncStatus(dispatch(start, { type: 'setParam', id: 'tilt', value: 3 }).state)).toBe(syncStatus(start));
     }
   });
 
   it('is Possibly Stale on reconnecting, and Unknown when the output is lost', () => {
-    expect(dispatch(inSync(), { type: 'outputConnected' }).state.sync).toBe('possiblyStale');
-    expect(dispatch(inSync(), { type: 'outputLost' }).state.sync).toBe('unknown');
+    expect(syncStatus(dispatch(inSync(), { type: 'outputConnected' }).state)).toBe('possiblyStale');
+    expect(syncStatus(dispatch(inSync(), { type: 'outputLost' }).state)).toBe('unknown');
   });
 
   it('is Possibly Stale after a failed send or a Raw MIDI message, but stays Unknown if it was', () => {
-    expect(dispatch(inSync(), { type: 'sendFailed' }).state.sync).toBe('possiblyStale');
-    expect(dispatch(inSync(), { type: 'rawSent' }).state.sync).toBe('possiblyStale');
-    expect(dispatch(onMidiChannel5(), { type: 'sendFailed' }).state.sync).toBe('unknown');
-    expect(dispatch(onMidiChannel5(), { type: 'rawSent' }).state.sync).toBe('unknown');
+    expect(syncStatus(dispatch(inSync(), { type: 'sendFailed' }).state)).toBe('possiblyStale');
+    expect(syncStatus(dispatch(inSync(), { type: 'rawSent' }).state)).toBe('possiblyStale');
+    expect(syncStatus(dispatch(onMidiChannel5(), { type: 'sendFailed' }).state)).toBe('unknown');
+    expect(syncStatus(dispatch(onMidiChannel5(), { type: 'rawSent' }).state)).toBe('unknown');
   });
 
   it('is Possibly Stale after the MIDI channel changes, since live sends may no longer reach the pedal', () => {
-    expect(dispatch(inSync(), { type: 'setMidiChannel', midiChannel: 6 }).state.sync).toBe('possiblyStale');
-    expect(dispatch(inSync(), { type: 'setMidiChannel', midiChannel: 5 }).state.sync).toBe('inSync');
+    expect(syncStatus(dispatch(inSync(), { type: 'setMidiChannel', midiChannel: 6 }).state)).toBe('possiblyStale');
+    expect(syncStatus(dispatch(inSync(), { type: 'setMidiChannel', midiChannel: 5 }).state)).toBe('inSync');
+  });
+});
+
+describe('Module Order, a Pedal Step setting', () => {
+  const inSync = () => run(onMidiChannel5(), { type: 'outputConnected' }, { type: 'sendAllFinished' }).state;
+  const reversed = ['texture', 'diffusion', 'movement', 'character'] as const;
+
+  it('starts at Character → Movement → Diffusion → Texture, permutation 0', () => {
+    const state = initialEditorState();
+
+    expect(state.working.moduleOrder).toBe(0);
+    expect(moduleOrderOf(state.working)).toEqual(['character', 'movement', 'diffusion', 'texture']);
+  });
+
+  it('is stored as one of the 24 permutation indexes, each a different order', () => {
+    const orders = new Set<string>();
+    for (let index = 0; index < 24; index++) {
+      const { state } = dispatch(initialEditorState(), { type: 'setParam', id: 'moduleOrder', value: index });
+      expect(state.working.moduleOrder).toBe(index);
+      orders.add(moduleOrderOf(state.working).join());
+    }
+
+    expect(orders.size).toBe(24);
+    expect(dispatch(initialEditorState(), { type: 'setModuleOrder', order: [...reversed] }).state.working.moduleOrder).toBe(23);
+    expect(dispatch(initialEditorState(), { type: 'setParam', id: 'moduleOrder', value: 99 }).state.working.moduleOrder).toBe(23);
+  });
+
+  it('sends no MIDI, and makes the Sync Status Possibly Stale until its Pedal Step is confirmed', () => {
+    const { state, messages } = dispatch(inSync(), { type: 'setModuleOrder', order: [...reversed] });
+
+    expect(messages).toEqual([]);
+    expect(moduleOrderOf(state.working)).toEqual(reversed);
+    expect(syncStatus(state)).toBe('possiblyStale');
+    expect(unconfirmedPedalSteps(state)).toEqual(['moduleOrder']);
+
+    const confirmed = dispatch(state, { type: 'confirmPedalStep', id: 'moduleOrder' });
+    expect(confirmed.messages).toEqual([]);
+    expect(syncStatus(confirmed.state)).toBe('inSync');
+    expect(unconfirmedPedalSteps(confirmed.state)).toEqual([]);
+  });
+
+  it('earns no trust in the MIDI-reachable settings when confirmed', () => {
+    const connected = dispatch(onMidiChannel5(), { type: 'outputConnected' }).state;
+    const state = run(connected, { type: 'setModuleOrder', order: [...reversed] }, { type: 'confirmPedalStep', id: 'moduleOrder' }).state;
+
+    expect(syncStatus(state)).toBe('possiblyStale');
+    expect(syncStatus(dispatch(onMidiChannel5(), { type: 'setModuleOrder', order: [...reversed] }).state)).toBe('unknown');
+  });
+
+  it('is never sent by Send All, which can’t make the Sync Status In Sync until the Pedal Step is confirmed', () => {
+    const connected = dispatch(onMidiChannel5(), { type: 'outputConnected' }).state;
+    const sent = run(connected, { type: 'setModuleOrder', order: [...reversed] }, { type: 'sendAllFinished' }).state;
+
+    expect(encodeSendAll(sent)).toEqual(encodeSendAll(onMidiChannel5()));
+    expect(syncStatus(sent)).toBe('possiblyStale');
+    expect(syncStatus(dispatch(sent, { type: 'confirmPedalStep', id: 'moduleOrder' }).state)).toBe('inSync');
+  });
+
+  it('undoes and redoes without sending anything; undoing back to the confirmed order needs no Pedal Step', () => {
+    const changed = dispatch(inSync(), { type: 'setModuleOrder', order: [...reversed] }).state;
+
+    const undone = dispatch(changed, { type: 'undo' });
+    expect(undone.messages).toEqual([]);
+    expect(undone.state.working.moduleOrder).toBe(0);
+    expect(syncStatus(undone.state)).toBe('inSync');
+
+    const redone = dispatch(undone.state, { type: 'redo' });
+    expect(redone.messages).toEqual([]);
+    expect(syncStatus(redone.state)).toBe('possiblyStale');
+
+    const confirmed = dispatch(changed, { type: 'confirmPedalStep', id: 'moduleOrder' }).state;
+    const undoneAfterConfirming = dispatch(confirmed, { type: 'undo' }).state;
+    expect(unconfirmedPedalSteps(undoneAfterConfirming)).toEqual(['moduleOrder']);
+    expect(syncStatus(undoneAfterConfirming)).toBe('possiblyStale');
+  });
+
+  it('records no undo step for an order already set, nor for confirming', () => {
+    const changed = dispatch(initialEditorState(), { type: 'setModuleOrder', order: [...reversed] }).state;
+    const state = run(
+      changed,
+      { type: 'setModuleOrder', order: [...reversed] },
+      { type: 'confirmPedalStep', id: 'moduleOrder' },
+      { type: 'undo' },
+    ).state;
+
+    // The one undo step is the change itself.
+    expect(state.working.moduleOrder).toBe(0);
+    expect(dispatch(state, { type: 'undo' }).state).toBe(state);
+  });
+
+  it('ignores an order that isn’t the four Modules once each', () => {
+    const start = initialEditorState();
+    for (const order of [['character', 'movement', 'diffusion'], ['character', 'character', 'diffusion', 'texture']] as const) {
+      expect(dispatch(start, { type: 'setModuleOrder', order: [...order] }).state).toBe(start);
+    }
   });
 });
 
@@ -567,10 +667,10 @@ describe('loadWorking', () => {
 
   it('is Possibly Stale until Send All finishes, and stays Unknown with no output', () => {
     const loaded = dispatch(inSync(), { type: 'loadWorking', working }).state;
-    expect(loaded.sync).toBe('possiblyStale');
-    expect(dispatch(loaded, { type: 'sendAllFinished' }).state.sync).toBe('inSync');
+    expect(syncStatus(loaded)).toBe('possiblyStale');
+    expect(syncStatus(dispatch(loaded, { type: 'sendAllFinished' }).state)).toBe('inSync');
 
-    expect(dispatch(onMidiChannel5(), { type: 'loadWorking', working }).state.sync).toBe('unknown');
+    expect(syncStatus(dispatch(onMidiChannel5(), { type: 'loadWorking', working }).state)).toBe('unknown');
   });
 
   it('clamps what it is given, so an Effect selection never lands in OFF', () => {
@@ -623,13 +723,13 @@ describe('recallSlot', () => {
     const { state } = dispatch(withSlotMap(), { type: 'recallSlot', slot: 33 });
 
     expect(state.working).toEqual(committed);
-    expect(state.sync).toBe('possiblyStale');
-    expect(dispatch(state, { type: 'sendAllFinished' }).state.sync).toBe('inSync');
+    expect(syncStatus(state)).toBe('possiblyStale');
+    expect(syncStatus(dispatch(state, { type: 'sendAllFinished' }).state)).toBe('inSync');
   });
 
   it('is Possibly Stale after a known Slot even from Unknown, since the Slot replaces whatever the pedal was sounding', () => {
     const unknown = dispatch(withSlotMap(), { type: 'recallSlot', slot: 0 }).state;
-    expect(dispatch(unknown, { type: 'recallSlot', slot: 33 }).state.sync).toBe('possiblyStale');
+    expect(syncStatus(dispatch(unknown, { type: 'recallSlot', slot: 33 }).state)).toBe('possiblyStale');
   });
 
   it('leaves the Working State alone on an unknown Slot, but makes the Sync Status Unknown', () => {
@@ -637,7 +737,7 @@ describe('recallSlot', () => {
     const { state } = dispatch(before, { type: 'recallSlot', slot: 0 });
 
     expect(state.working).toEqual(before.working);
-    expect(state.sync).toBe('unknown');
+    expect(syncStatus(state)).toBe('unknown');
   });
 
   it('clears the undo history either way: undoing would send one CC into what the Slot holds', () => {
@@ -645,6 +745,19 @@ describe('recallSlot', () => {
       const recalled = dispatch(withSlotMap(), { type: 'recallSlot', slot }).state;
       expect(dispatch(recalled, { type: 'undo' })).toEqual({ state: recalled, messages: [] });
     }
+  });
+
+  it('takes a known Slot’s Module Order as already on the pedal, since the Slot holds it; an unknown Slot changes nothing', () => {
+    const reordered = { ...committed, moduleOrder: 23 };
+    const before = { ...withSlotMap(), slotMap: { 33: { committed: reordered, presetId: 'shimmer', name: 'Shimmer Tape' } } };
+
+    const known = dispatch(before, { type: 'recallSlot', slot: 33 }).state;
+    expect(unconfirmedPedalSteps(known)).toEqual([]);
+    expect(syncStatus(dispatch(known, { type: 'sendAllFinished' }).state)).toBe('inSync');
+
+    const changed = dispatch(before, { type: 'setModuleOrder', order: ['texture', 'diffusion', 'movement', 'character'] }).state;
+    const unknown = dispatch(changed, { type: 'recallSlot', slot: 0 }).state;
+    expect(unconfirmedPedalSteps(unknown)).toEqual(['moduleOrder']);
   });
 
   it('leaves the Slot Map alone', () => {

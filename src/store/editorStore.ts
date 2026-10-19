@@ -9,6 +9,7 @@ import {
   type EffectId,
   type EffectParamId,
   type ModuleId,
+  type PedalStepParamId,
   type PerformanceActionId,
   type PerformanceControlId,
   type PresetParamId,
@@ -44,6 +45,10 @@ type EditorStore = {
   setEngaged(module: ModuleId, engaged: boolean): void;
   /** Chooses a setting such as Filter style by name and sends it. */
   selectChoice<P extends ChoiceParamId>(id: P, choice: ChoiceId<P>): void;
+  /** Sets Module Order, a Pedal Step setting: nothing is sent, and the Pedal Step waits to be confirmed. */
+  setModuleOrder(order: ModuleId[]): void;
+  /** The user has performed a setting's Pedal Step, so the pedal now matches the Working State for it. */
+  confirmPedalStep(id: PedalStepParamId): void;
   /** Presses one button of a Performance Control, such as Capture → Record; sent at once, never stored. */
   perform<C extends PerformanceControlId>(control: C, action: PerformanceActionId<C>): void;
   /** Sets the pedal-wide Calibration Level and sends it. */
@@ -181,6 +186,12 @@ export function createEditorStore(virtualPedal: VirtualPedal) {
       },
       selectChoice(id, choice) {
         apply({ type: 'selectChoice', id, choice });
+      },
+      setModuleOrder(order) {
+        apply({ type: 'setModuleOrder', order });
+      },
+      confirmPedalStep(id) {
+        apply({ type: 'confirmPedalStep', id });
       },
       perform(control, action) {
         apply({ type: 'perform', control, action });

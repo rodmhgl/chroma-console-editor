@@ -4,15 +4,16 @@ import { useSettingsStore } from '../store/settingsStore';
 import { ConnectionBar, SyncUnknownNote, WebMidiNote } from './ConnectionBar';
 import { DataDrawer } from './drawer/DataDrawer';
 import { useLayoutScale } from './layoutScale';
-import { MODULE_IDS, ModuleColumn } from './panels/ModuleColumn';
+import { Modules } from './panels/ModuleColumn';
+import { PedalStepsPanel } from './panels/PedalStepsPanel';
 import { PerformancePanel } from './panels/PerformancePanel';
 import { SharedControls } from './panels/SharedControls';
 import { useShortcuts } from './useShortcuts';
 import { VirtualPedalView } from './VirtualPedalView';
 
 /**
- * The editor: the connection bar, then the console of shared controls and Modules, the Performance Controls and Global
- * Settings apart from it, and the Virtual Pedal.
+ * The editor: the connection bar, then the console of shared controls and Modules, any Pedal Steps waiting to be done,
+ * the Performance Controls and Global Settings apart from the console, and the Virtual Pedal.
  */
 export function App() {
   const theme = useSettingsStore((s) => s.theme);
@@ -35,12 +36,9 @@ export function App() {
           <SyncUnknownNote />
           <section className="console" aria-label="Editor">
             <SharedControls />
-            <div className="modules">
-              {MODULE_IDS.map((module) => (
-                <ModuleColumn key={module} module={module} />
-              ))}
-            </div>
+            <Modules />
           </section>
+          <PedalStepsPanel />
           <PerformancePanel />
           <VirtualPedalView pedal={virtualPedal} />
           <footer className="affiliation-notice">

@@ -29,7 +29,7 @@ describe('serializePreset', () => {
       'params',
     ]);
     expect(file.format).toBe('chroma-console-preset');
-    expect(file.schemaVersion).toBe(1);
+    expect(file.schemaVersion).toBe(2);
     expect(typeof file.appVersion).toBe('string');
     expect(file.tags).toEqual(['ambient', 'pad']);
     expect(Object.keys(file.params).slice(0, 5)).toEqual([
@@ -54,6 +54,16 @@ describe('serializePreset', () => {
 describe('parsePreset', () => {
   it('reads back what serializePreset wrote, without warnings', () => {
     expect(parsePreset(serializePreset(shimmer))).toEqual({ ok: true, preset: shimmer, warnings: [] });
+  });
+});
+
+describe('parsePreset migrates', () => {
+  it('a schema 1 file, written before Module Order, to the default Module Order without a warning', () => {
+    const file = JSON.parse(serializePreset({ ...shimmer, params: { ...shimmer.params, moduleOrder: 0 } }));
+    delete file.params.moduleOrder;
+    const result = parsePreset(JSON.stringify({ ...file, schemaVersion: 1 }));
+
+    expect(result).toEqual({ ok: true, preset: { ...shimmer, params: { ...shimmer.params, moduleOrder: 0 } }, warnings: [] });
   });
 });
 
@@ -95,7 +105,7 @@ describe('parsePreset rejects', () => {
   });
 
   it('a file made by a newer version, rather than loading it best-effort', () => {
-    expect(parse({ ...valid(), schemaVersion: 2 })).toEqual({
+    expect(parse({ ...valid(), schemaVersion: 3 })).toEqual({
       ok: false,
       error: 'Made by a newer version of the editor, please update',
     });

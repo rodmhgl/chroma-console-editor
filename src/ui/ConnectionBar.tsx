@@ -1,4 +1,5 @@
 import { useEffect, useId } from 'react';
+import { syncStatus } from '../model/core';
 import { SYNC_STATUS_LABELS, type SyncStatus } from '../model/sync';
 import { UPDATE_WAITING_HELP, useAppStore } from '../store/appStore';
 import { useEditorStore } from '../store/editorStore';
@@ -14,7 +15,8 @@ export const MIDI_CHANNEL_HINT =
 
 const SYNC_STATUS_HELP: Record<SyncStatus, string> = {
   inSync: 'The pedal should be sounding what the editor shows: everything was sent. Touching the pedal’s own controls isn’t detected.',
-  possiblyStale: 'Since connecting, a MIDI channel change, Raw MIDI or a failed send, the pedal may hold anything. Send All to match it.',
+  possiblyStale:
+    'Since connecting, a MIDI channel change, Raw MIDI or a failed send, the pedal may hold anything: Send All to match it. A Pedal Step not yet confirmed also leaves it here.',
   unknown:
     'No output is connected, so nothing reaches the pedal. Or a Slot the editor knows nothing about was recalled: Send All to make the pedal match the editor again.',
 };
@@ -23,6 +25,7 @@ const SYNC_STATUS_HELP: Record<SyncStatus, string> = {
 export function ConnectionBar() {
   const { outputs, outputId, editor, setOutput, setMidiChannel, sendAll, canSendAll, connectWebMidi } = useEditorStore();
   const { midiChannel } = editor.global;
+  const sync = syncStatus(editor);
   const sendAllKeys = commandKeys('E');
   const workingStateName = useLibraryStore((s) => s.source.name);
   const modified = useWorkingStateModified();
@@ -48,8 +51,8 @@ export function ConnectionBar() {
         {workingStateName}
         {modified && ' •'}
       </output>
-      <output className={`sync-pill is-${editor.sync}`} aria-label="Sync Status" title={SYNC_STATUS_HELP[editor.sync]}>
-        {SYNC_STATUS_LABELS[editor.sync]}
+      <output className={`sync-pill is-${sync}`} aria-label="Sync Status" title={SYNC_STATUS_HELP[sync]}>
+        {SYNC_STATUS_LABELS[sync]}
       </output>
       <UpdatePill />
       <div className="connection">
@@ -129,7 +132,7 @@ function UpdatePill() {
 
 /** Shown above the console while the editor can't tell what the pedal is sounding. */
 export function SyncUnknownNote() {
-  const sync = useEditorStore((s) => s.editor.sync);
+  const sync = useEditorStore((s) => syncStatus(s.editor));
   if (sync !== 'unknown') return null;
   return (
     <p className="connection-note" role="status">

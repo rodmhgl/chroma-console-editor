@@ -6,15 +6,19 @@ import {
   clampToParam,
   ENGAGED_PARAMS,
   isEngaged,
+  moduleOrderIndex,
+  PEDAL_STEP_PARAMS,
   performanceAction,
   slotAddress,
   type CalibrationLevelId,
+  type CcParamId,
   type ChoiceId,
   type ChoiceParamId,
   type EffectId,
   type EffectParamId,
   type ModuleId,
   type ParamDef,
+  type PedalStepParamId,
   type PerformanceActionId,
   type PerformanceControlId,
   type PresetParamId,
@@ -33,7 +37,13 @@ export type EditorState = {
   global: GlobalSettings;
   /** Undo/redo for Working State edits. */
   history: history.History;
-  sync: SyncStatus;
+  /** How far the editor trusts the MIDI-reachable settings; `syncStatus` adds the Pedal Step settings. */
+  midiSync: SyncStatus;
+  /**
+   * Each Pedal Step setting's value as the user last confirmed applying it on the pedal. Assumed to be the default
+   * until then, like a new Preset.
+   */
+  confirmed: Record<PedalStepParamId, number>;
   /** What the editor believes each Slot holds: what it last committed there. Never confirmed by the pedal. */
   slotMap: SlotMap;
 };
@@ -57,6 +67,10 @@ export type EditorAction =
    * Working State; any other leaves the Working State alone, no longer what the pedal sounds.
    */
   | { type: 'recallSlot'; slot: number }
+  /** Module Order, a Pedal Step setting: sends nothing and needs its Pedal Step confirming. Ignored unless all four Modules. */
+  | { type: 'setModuleOrder'; order: ModuleId[] }
+  /** The user has performed the Pedal Step for a setting, so the pedal now holds its Working State value. Not undoable. */
+  | { type: 'confirmPedalStep'; id: PedalStepParamId }
   /** The MIDI channel the editor sends on. Sends nothing and isn't undoable; a change makes the Sync Status Possibly Stale. */
   | { type: 'setMidiChannel'; midiChannel: number }
   /** One button of a Performance Control, such as Capture → Record: sends it and changes nothing in the Editor State. */
@@ -83,13 +97,30 @@ export type EditorAction =
 export type CoreResult = { state: EditorState; messages: MidiMessage[] };
 
 export function initialEditorState(): EditorState {
+  const working = defaultWorkingState();
   return {
-    working: defaultWorkingState(),
+    working,
     global: defaultGlobalSettings(),
     history: history.EMPTY_HISTORY,
-    sync: INITIAL_SYNC_STATUS,
+    midiSync: INITIAL_SYNC_STATUS,
+    confirmed: pedalStepValues(working),
     slotMap: EMPTY_SLOT_MAP,
   };
+}
+
+/** The Pedal Step settings of a Working State. */
+function pedalStepValues(working: WorkingState): Record<PedalStepParamId, number> {
+  return Object.fromEntries(PEDAL_STEP_PARAMS.map((id) => [id, working[id]])) as Record<PedalStepParamId, number>;
+}
+
+/** The Pedal Step settings whose Working State value the user hasn't confirmed applying on the pedal. */
+export function unconfirmedPedalSteps(state: Pick<EditorState, 'working' | 'confirmed'>): PedalStepParamId[] {
+  return PEDAL_STEP_PARAMS.filter((id) => state.working[id] !== state.confirmed[id]);
+}
+
+/** How far the editor trusts that the pedal is sounding the Working State: an unconfirmed Pedal Step spoils In Sync. */
+export function syncStatus(state: EditorState): SyncStatus {
+  return state.midiSync === 'inSync' && unconfirmedPedalSteps(state).length > 0 ? 'possiblyStale' : state.midiSync;
 }
 
 /** The Editor State after `action`, and the MIDI to send for it. */
@@ -117,11 +148,20 @@ export function dispatch(state: EditorState, action: EditorAction): CoreResult {
       const entry = state.slotMap[action.slot];
       // Earlier steps belong to the state the Slot replaced: undoing one would send a single CC into it.
       const recalled = { ...state, working: entry?.committed ?? state.working, history: history.EMPTY_HISTORY };
+      // The Slot was committed with its Pedal Steps done, so the pedal now holds its Pedal Step settings too.
+      if (entry) recalled.confirmed = pedalStepValues(entry.committed);
       return {
         state: sync(recalled, entry ? 'recallKnown' : 'recallUnknown'),
         messages: [programChange(state.global.midiChannel, action.slot)],
       };
     }
+    case 'setModuleOrder': {
+      const index = moduleOrderIndex(action.order);
+      if (index === undefined) return { state, messages: [] };
+      return setParam(state, 'moduleOrder', index);
+    }
+    case 'confirmPedalStep':
+      return { state: { ...state, confirmed: { ...state.confirmed, [action.id]: state.working[action.id] } }, messages: [] };
     case 'setMidiChannel': {
       if (action.midiChannel === state.global.midiChannel) return { state, messages: [] };
       const next = { ...state, global: { ...state.global, midiChannel: action.midiChannel } };
@@ -171,7 +211,7 @@ export function dispatch(state: EditorState, action: EditorAction): CoreResult {
 }
 
 function sync(state: EditorState, event: SyncEvent): EditorState {
-  return { ...state, sync: nextSyncStatus(state.sync, event) };
+  return { ...state, midiSync: nextSyncStatus(state.midiSync, event) };
 }
 
 function selectChoice(state: EditorState, id: ChoiceParamId, choiceId: string): CoreResult {
@@ -183,15 +223,19 @@ function selectChoice(state: EditorState, id: ChoiceParamId, choiceId: string): 
 function setParam(state: EditorState, id: PresetParamId, value: number, undoable = true): CoreResult {
   const param: ParamDef = PARAMS[id];
   const v = clampToParam(param, value);
+  const working = { ...state.working, [id]: v };
+  const recorded = undoable ? history.record(state.history, id, state.working[id], v) : state.history;
+  // MIDI can't reach a Pedal Step setting: until the user confirms its Pedal Step, `syncStatus` says so.
+  if (param.transport === 'pedalStep') return { state: { ...state, working, history: recorded }, messages: [] };
   const next = sync(
     {
       ...state,
-      working: { ...state.working, [id]: v },
-      history: undoable ? history.record(state.history, id, state.working[id], v) : state.history,
+      working,
+      history: recorded,
     },
     'edit',
   );
-  const messages = [encodeParam(next, id)];
+  const messages = [encodeParam(next, id as CcParamId)];
   // Whether the pedal engages a Bypassed Module when its Effect changes is unknown (hardware check 7), so the editor
   // says Bypassed again rather than risk the pedal and the editor disagreeing.
   if (param.kind === 'effect' && param.module && !isEngaged(next.working, param.module)) {
@@ -201,7 +245,7 @@ function setParam(state: EditorState, id: PresetParamId, value: number, undoable
 }
 
 /** One Working State control as the CC that sets it on the pedal. */
-export function encodeParam(state: EditorState, id: PresetParamId): MidiMessage {
+export function encodeParam(state: EditorState, id: CcParamId): MidiMessage {
   return controlChange(state.global.midiChannel, PARAMS[id].cc, state.working[id]);
 }
 
@@ -209,8 +253,8 @@ export function encodeParam(state: EditorState, id: PresetParamId): MidiMessage 
 const SEND_ALL_GROUPS: ParamDef['group'][] = ['effect', 'fxSetup', 'primary', 'secondary', 'engaged'];
 
 /** Every Working State setting in the order Send All transmits it. */
-export function sendAllOrder(): PresetParamId[] {
-  return SEND_ALL_GROUPS.flatMap((group) => PRESET_PARAMS.filter((p) => p.group === group).map((p) => p.id as PresetParamId));
+export function sendAllOrder(): CcParamId[] {
+  return SEND_ALL_GROUPS.flatMap((group) => PRESET_PARAMS.filter((p) => p.group === group && p.transport === 'cc').map((p) => p.id as CcParamId));
 }
 
 /** The full Working State as MIDI, in Send All order. */
