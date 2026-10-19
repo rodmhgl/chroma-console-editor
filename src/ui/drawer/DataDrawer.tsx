@@ -4,14 +4,16 @@ import { DATA_BUTTON_ID, DATA_DRAWER_ID, DRAWER_PANEL_ID, drawerTabId } from '..
 import { LibraryTab } from './LibraryTab';
 import { MidiMonitor } from './MidiMonitor';
 import { SettingsTab } from './SettingsTab';
+import { SlotsTab } from './SlotsTab';
 
 const TABS: { id: DrawerTab; label: string }[] = [
   { id: 'library', label: 'Library' },
+  { id: 'slots', label: 'Slots' },
   { id: 'monitor', label: 'MIDI Monitor' },
   { id: 'settings', label: 'Settings' },
 ];
 
-/** A slide-over with the Library, the MIDI Monitor and the editor's Settings. Inert while closed; Escape closes it. */
+/** A slide-over with the Library, the Slot Map, the MIDI Monitor and the editor's Settings. Inert while closed; Escape closes it. */
 export function DataDrawer() {
   const { drawerOpen, drawerTab, showTab, closeDrawer } = useLayoutStore();
   const sentCount = useEditorStore((s) => s.sent.length);
@@ -51,6 +53,7 @@ export function DataDrawer() {
       </div>
       <div id={DRAWER_PANEL_ID} className="drawer-body" role="tabpanel" aria-labelledby={drawerTabId(drawerTab)}>
         {drawerTab === 'library' && <LibraryTab />}
+        {drawerTab === 'slots' && <SlotsTab />}
         {drawerTab === 'monitor' && <MidiMonitor />}
         {drawerTab === 'settings' && <SettingsTab />}
       </div>

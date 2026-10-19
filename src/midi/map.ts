@@ -456,13 +456,22 @@ export function readControl(id: LevelParamId, working: Readonly<Record<PresetPar
 }
 
 const SLOTS_PER_BANK = 20;
+/** The four Banks of 20 Slots, in Program Change order. */
+export const BANKS = ['A', 'B', 'C', 'D'] as const;
+export type Bank = (typeof BANKS)[number];
 /** Program Change 0 to one below this recalls a Slot. */
-export const SLOT_COUNT = 4 * SLOTS_PER_BANK;
+export const SLOT_COUNT = BANKS.length * SLOTS_PER_BANK;
 
 /** A Slot's address, Bank + number (e.g. "D-14"), for the Program Change that recalls it; undefined past the 80 Slots. */
 export function slotAddress(program: number): string | undefined {
   if (program < 0 || program >= SLOT_COUNT) return undefined;
-  return `${'ABCD'[Math.floor(program / SLOTS_PER_BANK)]}-${(program % SLOTS_PER_BANK) + 1}`;
+  return `${BANKS[Math.floor(program / SLOTS_PER_BANK)]}-${(program % SLOTS_PER_BANK) + 1}`;
+}
+
+/** A Bank's Slots, each as the Program Change that recalls it. */
+export function slotsInBank(bank: Bank): number[] {
+  const first = BANKS.indexOf(bank) * SLOTS_PER_BANK;
+  return Array.from({ length: SLOTS_PER_BANK }, (_, i) => first + i);
 }
 
 /** One button of a Performance Control: the CC it sends, the value it sends, and the range the pedal reads as it. */

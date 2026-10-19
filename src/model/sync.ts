@@ -20,7 +20,11 @@ export type SyncEvent =
   /** One Working State setting sent live. */
   | 'edit'
   /** A whole new Working State (an opened Preset, or New): the pedal holds the old one until Send All finishes. */
-  | 'load';
+  | 'load'
+  /** A Slot recalled whose Slot Map entry the Working State now is. */
+  | 'recallKnown'
+  /** A Slot recalled that the Slot Map has no entry for: the pedal now sounds something the editor can't know. */
+  | 'recallUnknown';
 
 export const SYNC_STATUS_LABELS: Record<SyncStatus, string> = {
   inSync: 'In Sync',
@@ -36,8 +40,12 @@ export function nextSyncStatus(status: SyncStatus, event: SyncEvent): SyncStatus
     case 'sendAll':
       return 'inSync';
     case 'connect':
+    // The Slot replaces whatever the pedal was sounding with what the editor committed there, but the pedal never
+    // confirmed that, and it may not keep every setting in a Slot (hardware check 6).
+    case 'recallKnown':
       return 'possiblyStale';
     case 'disconnect':
+    case 'recallUnknown':
       return 'unknown';
     case 'sendFailed':
     case 'rawMidi':

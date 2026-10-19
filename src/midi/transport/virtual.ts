@@ -1,7 +1,7 @@
 import { defaultPedalState, type PedalState } from '../../model/state';
 import { decode } from '../decode';
 import type { MidiMessage } from '../encode';
-import { DEFAULT_MIDI_CHANNEL, describeCc, paramByCc, type PresetParamId } from '../map';
+import { DEFAULT_MIDI_CHANNEL, describeCc, paramByCc, slotAddress, type PresetParamId } from '../map';
 import type { MidiPort, MidiTransport } from './types';
 
 export const VIRTUAL_PEDAL_PORT: MidiPort = { id: 'virtual-pedal', name: 'Virtual Pedal' };
@@ -37,6 +37,10 @@ export function createVirtualPedal(midiChannel = DEFAULT_MIDI_CHANNEL): VirtualP
       else if (msg.kind === 'cc' && described) {
         if (param) pedalState = { ...pedalState, [param.id as PresetParamId]: msg.value };
         text = `${what} → ${described}`;
+      } else if (msg.kind === 'pc') {
+        // It holds no Slots, so it sounds on as it was.
+        const slot = slotAddress(msg.program);
+        text = `${what} → ${slot ? `Recall Slot ${slot}` : '(no such Slot)'}`;
       } else text = `${what} → (not in MIDI map)`;
     }
     snapshot = { ...snapshot, state: pedalState, log: [...snapshot.log, { id: nextLogId++, text }] };

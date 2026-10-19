@@ -1,4 +1,4 @@
-import { controlChange, type MidiMessage } from '../midi/encode';
+import { controlChange, programChange, type MidiMessage } from '../midi/encode';
 import {
   CALIBRATION_LEVEL,
   PARAMS,
@@ -7,6 +7,7 @@ import {
   ENGAGED_PARAMS,
   isEngaged,
   performanceAction,
+  slotAddress,
   type CalibrationLevelId,
   type ChoiceId,
   type ChoiceParamId,
@@ -19,19 +20,22 @@ import {
   type PresetParamId,
 } from '../midi/map';
 import * as history from './history';
+import { EMPTY_SLOT_MAP, type SlotMap } from './slotMap';
 import { defaultGlobalSettings, defaultWorkingState, type GlobalSettings, type WorkingState } from './state';
 import { INITIAL_SYNC_STATUS, nextSyncStatus, type SyncEvent, type SyncStatus } from './sync';
 
 // The editor core (SPEC.md, Implementation Decisions): every change to the Editor State is one pure transition, which
 // also says what MIDI to send. The store only applies it and does the sending.
 
-/** Everything the editor believes about and controls on the pedal. Slot Map arrives later. */
+/** Everything the editor believes about and controls on the pedal. */
 export type EditorState = {
   working: WorkingState;
   global: GlobalSettings;
   /** Undo/redo for Working State edits. */
   history: history.History;
   sync: SyncStatus;
+  /** What the editor believes each Slot holds: what it last committed there. Never confirmed by the pedal. */
+  slotMap: SlotMap;
 };
 
 export type EditorAction =
@@ -48,6 +52,11 @@ export type EditorAction =
    * and it is Possibly Stale until that finishes. Clears the undo history, whose steps belong to the old one.
    */
   | { type: 'loadWorking'; working: WorkingState }
+  /**
+   * Recalls a Slot on the pedal by its Program Change, 0–79. A Slot in the Slot Map makes its committed state the
+   * Working State; any other leaves the Working State alone, no longer what the pedal sounds.
+   */
+  | { type: 'recallSlot'; slot: number }
   /** The MIDI channel the editor sends on. Sends nothing and isn't undoable; a change makes the Sync Status Possibly Stale. */
   | { type: 'setMidiChannel'; midiChannel: number }
   /** One button of a Performance Control, such as Capture → Record: sends it and changes nothing in the Editor State. */
@@ -74,7 +83,13 @@ export type EditorAction =
 export type CoreResult = { state: EditorState; messages: MidiMessage[] };
 
 export function initialEditorState(): EditorState {
-  return { working: defaultWorkingState(), global: defaultGlobalSettings(), history: history.EMPTY_HISTORY, sync: INITIAL_SYNC_STATUS };
+  return {
+    working: defaultWorkingState(),
+    global: defaultGlobalSettings(),
+    history: history.EMPTY_HISTORY,
+    sync: INITIAL_SYNC_STATUS,
+    slotMap: EMPTY_SLOT_MAP,
+  };
 }
 
 /** The Editor State after `action`, and the MIDI to send for it. */
@@ -96,6 +111,16 @@ export function dispatch(state: EditorState, action: EditorAction): CoreResult {
         PRESET_PARAMS.map((p) => [p.id, clampToParam(p, action.working[p.id as PresetParamId])]),
       ) as WorkingState;
       return { state: sync({ ...state, working, history: history.EMPTY_HISTORY }, 'load'), messages: [] };
+    }
+    case 'recallSlot': {
+      if (!slotAddress(action.slot)) return { state, messages: [] };
+      const entry = state.slotMap[action.slot];
+      // Earlier steps belong to the state the Slot replaced: undoing one would send a single CC into it.
+      const recalled = { ...state, working: entry?.committed ?? state.working, history: history.EMPTY_HISTORY };
+      return {
+        state: sync(recalled, entry ? 'recallKnown' : 'recallUnknown'),
+        messages: [programChange(state.global.midiChannel, action.slot)],
+      };
     }
     case 'setMidiChannel': {
       if (action.midiChannel === state.global.midiChannel) return { state, messages: [] };
