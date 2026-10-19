@@ -5,7 +5,8 @@ import { commandKeys } from '../useShortcuts';
 
 /**
  * Snapshot A/B: take a Snapshot of the Working State, flip between it (A) and ongoing edits (B) to compare by ear, then
- * adopt or discard it. While A shows, the console can't be edited, so the Snapshot stays frozen.
+ * adopt or discard it. While A shows, the console can't be edited, so the Snapshot stays frozen. Opening a Preset or
+ * recalling a Slot discards it.
  */
 export function SnapshotBar() {
   const editor = useEditorStore((s) => s.editor);
@@ -73,7 +74,7 @@ export function SnapshotBar() {
           )}
         </div>
       </div>
-      {showing && <p className="snapshot-note">Showing the Snapshot, which can’t be edited. Flip back to B to keep editing.</p>}
+      {showing && <p className="snapshot-note">Showing the Snapshot, which can’t be edited; Save still saves B. Flip back to B to keep editing.</p>}
       {inexact.length > 0 && (
         <p className="snapshot-note is-warning" role="status">
           A and B differ in {inexact.join(' and ')}, which MIDI can’t send: flipping leaves the pedal’s own, so the

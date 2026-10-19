@@ -5,7 +5,7 @@ type KeyLike = Pick<KeyboardEvent, 'key' | 'metaKey' | 'ctrlKey' | 'shiftKey' | 
 
 export type Shortcut = { type: 'undo' | 'redo' | 'sendAll' | 'takeSnapshot' | 'flipAB' | 'adoptSnapshot' | 'discardSnapshot' };
 
-/** ⌘ (Ctrl elsewhere) + key, without ⇧: K keeps a Snapshot, B flips A/B, U uses the Snapshot, ⌫ discards it. */
+/** ⌘ (Ctrl elsewhere) + key, without ⇧: K takes a Snapshot, B flips A/B, U adopts it, ⌫ discards it. */
 const COMMANDS: Record<string, Shortcut['type']> = {
   e: 'sendAll',
   k: 'takeSnapshot',

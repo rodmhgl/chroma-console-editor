@@ -6,7 +6,7 @@ import { expect, test, type Page } from '@playwright/test';
 const pedalOf = (page: Page) => page.getByRole('region', { name: 'Virtual Pedal' });
 const snapshotOf = (page: Page) => page.getByRole('region', { name: 'Snapshot A/B' });
 
-test('take → edit → flip → adopt: each flip sends only what differs, and adopting keeps the Snapshot', async ({ page }) => {
+test('take → edit → flip → adopt: each flip sends only what differs, and adopting makes the Snapshot the Working State', async ({ page }) => {
   await page.goto('./');
   const snapshot = snapshotOf(page);
   const pedal = pedalOf(page);
@@ -55,7 +55,7 @@ test('take → edit → flip → adopt: each flip sends only what differs, and a
   await expect(pedal.getByLabel('Movement Effect', { exact: true })).toHaveText('Phaser');
 });
 
-test('the shortcuts take, flip and discard the Snapshot, and discarding while A shows returns to B', async ({ page }) => {
+test('the shortcuts take, flip, discard and adopt the Snapshot; discarding while A shows returns to B', async ({ page }) => {
   await page.goto('./');
   const snapshot = snapshotOf(page);
   const time = page.getByRole('region', { name: 'Shared controls' }).getByRole('slider', { name: 'Time' });
@@ -73,6 +73,12 @@ test('the shortcuts take, flip and discard the Snapshot, and discarding while A 
   await expect(snapshot.getByLabel('Comparing')).toHaveCount(0);
   await expect(time).toHaveAttribute('aria-valuenow', '65');
   await expect(pedalOf(page).getByRole('log').getByRole('listitem').last()).toContainText('CC 68 = 65');
+
+  await page.keyboard.press('ControlOrMeta+k');
+  await time.press('ArrowUp');
+  await page.keyboard.press('ControlOrMeta+u');
+  await expect(snapshot.getByLabel('Comparing')).toHaveCount(0);
+  await expect(time).toHaveAttribute('aria-valuenow', '65');
 });
 
 test('a flip that changes Module Order warns the comparison isn’t exact for it', async ({ page }) => {

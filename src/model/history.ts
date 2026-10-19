@@ -40,8 +40,7 @@ export function record(h: History, id: PresetParamId, before: number, after: num
     if (Object.keys(step).length === 0) return { ...h, past, merging: false };
     return { ...h, past: [...past, step] };
   }
-  const past = [...h.past, { [id]: { before, after } }].slice(-HISTORY_LIMIT);
-  return { ...h, past, future: [], merging: h.dragging };
+  return { ...pushStep(h, { [id]: { before, after } }), merging: h.dragging };
 }
 
 /** Records a change to many controls at once, such as adopting a Snapshot, as one step of every control it changed. */
@@ -51,7 +50,12 @@ export function recordAll(h: History, before: WorkingState, after: WorkingState)
     if (before[id] !== after[id]) step[id] = { before: before[id], after: after[id] };
   }
   if (Object.keys(step).length === 0) return h;
-  return { ...h, past: [...h.past, step].slice(-HISTORY_LIMIT), future: [], merging: false };
+  return { ...pushStep(h, step), merging: false };
+}
+
+/** Adds a new step, dropping the oldest beyond the limit; it replaces anything there was to redo. */
+function pushStep(h: History, step: Step): History {
+  return { ...h, past: [...h.past, step].slice(-HISTORY_LIMIT), future: [] };
 }
 
 export function beginDrag(h: History): History {

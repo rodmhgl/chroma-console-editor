@@ -67,7 +67,7 @@ export type EditorAction =
   | { type: 'selectChoice'; id: ChoiceParamId; choice: ChoiceId }
   /**
    * A whole new Working State (an opened Preset, or New), clamped. Sends nothing: the store follows it with Send All,
-   * and it is Possibly Stale until that finishes. Clears the undo history, whose steps belong to the old one.
+   * and it is Possibly Stale until that finishes. Clears the undo history and the Snapshot, which belong to the old one.
    */
   | { type: 'loadWorking'; working: WorkingState }
   /**
@@ -137,8 +137,8 @@ export function inexactPedalSteps(state: Pick<EditorState, 'working' | 'snapshot
   return PEDAL_STEP_PARAMS.filter((id) => snapshot.state[id] !== state.working[id]);
 }
 
-/** Edits to the Working State, ignored while the Snapshot is showing so that it stays frozen. */
-const EDITS = new Set<EditorAction['type']>(['setParam', 'selectEffect', 'setEngaged', 'selectChoice', 'setModuleOrder', 'undo', 'redo', 'takeSnapshot']);
+/** What would change the Working State or the Snapshot: ignored while the Snapshot is showing, so that it stays frozen. */
+const FROZEN_WHILE_SHOWING = new Set<EditorAction['type']>(['setParam', 'selectEffect', 'setEngaged', 'selectChoice', 'setModuleOrder', 'undo', 'redo', 'takeSnapshot']);
 
 /** The Pedal Step settings of a Working State. */
 function pedalStepValues(working: WorkingState): Record<PedalStepParamId, number> {
@@ -158,7 +158,7 @@ export function syncStatus(state: EditorState): SyncStatus {
 
 /** The Editor State after `action`, and the MIDI to send for it. */
 export function dispatch(state: EditorState, action: EditorAction): CoreResult {
-  if (state.snapshot?.showing && EDITS.has(action.type)) return { state, messages: [] };
+  if (state.snapshot?.showing && FROZEN_WHILE_SHOWING.has(action.type)) return { state, messages: [] };
   switch (action.type) {
     case 'setParam':
       return setParam(state, action.id, action.value);
@@ -175,17 +175,18 @@ export function dispatch(state: EditorState, action: EditorAction): CoreResult {
       const working = Object.fromEntries(
         PRESET_PARAMS.map((p) => [p.id, clampToParam(p, action.working[p.id as PresetParamId])]),
       ) as WorkingState;
-      return { state: sync({ ...state, working, history: history.EMPTY_HISTORY, snapshot: hidden(state.snapshot) }, 'load'), messages: [] };
+      return { state: sync({ ...state, working, history: history.EMPTY_HISTORY, snapshot: null }, 'load'), messages: [] };
     }
     case 'recallSlot': {
       if (!slotAddress(action.slot)) return { state, messages: [] };
       const entry = state.slotMap[action.slot];
-      // Earlier steps belong to the state the Slot replaced: undoing one would send a single CC into it.
+      // Earlier steps belong to the state the Slot replaced: undoing one would send a single CC into it. So does the
+      // Snapshot, which adopting would put in place of the Slot's state.
       const recalled = {
         ...state,
         working: entry?.committed ?? state.working,
         history: history.EMPTY_HISTORY,
-        snapshot: hidden(state.snapshot),
+        snapshot: null,
       };
       // The Slot was committed with its Pedal Steps done, so the pedal now holds its Pedal Step settings too.
       if (entry) recalled.confirmed = pedalStepValues(entry.committed);
@@ -266,11 +267,6 @@ function sync(state: EditorState, event: SyncEvent): EditorState {
   return { ...state, midiSync: nextSyncStatus(state.midiSync, event) };
 }
 
-/** A Snapshot no longer showing: a new Working State replaces what the pedal sounds, so the screen shows that. */
-function hidden(snapshot: Snapshot | null): Snapshot | null {
-  return snapshot && { ...snapshot, showing: false };
-}
-
 /**
  * `next`, with the live sends that take the pedal from what `state` shows to what `next` shows: only the MIDI-reachable
  * values that differ, in Send All order.
@@ -278,12 +274,13 @@ function hidden(snapshot: Snapshot | null): Snapshot | null {
 function sendDifference(state: EditorState, next: EditorState): CoreResult {
   const from = shownState(state);
   const to = shownState(next);
-  const ids = new Set(sendAllOrder().filter((id) => from[id] !== to[id]));
+  const changed = sendAllOrder().filter((id) => from[id] !== to[id]);
   // Said again for a Bypassed Module whose Effect changes, as `setParam` does (hardware check 7).
-  for (const id of ids) {
+  const resaidBypassed = changed.flatMap((id) => {
     const { kind, module } = PARAMS[id] as ParamDef;
-    if (kind === 'effect' && module && !isEngaged(to, module)) ids.add(ENGAGED_PARAMS[module]);
-  }
+    return kind === 'effect' && module && !isEngaged(to, module) ? [ENGAGED_PARAMS[module]] : [];
+  });
+  const ids = new Set<CcParamId>([...changed, ...resaidBypassed]);
   if (ids.size === 0) return { state: next, messages: [] };
   const sent = sync(next, 'edit');
   return { state: sent, messages: sendAllOrder().filter((id) => ids.has(id)).map((id) => encodeParam(sent, id)) };

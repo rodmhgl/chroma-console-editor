@@ -948,14 +948,14 @@ describe('Snapshot A/B', () => {
     expect(state.snapshot).toEqual({ state: edited().working, showing: false });
   });
 
-  it('keeps the Snapshot when another Working State is loaded or a Slot recalled, showing the new Working State', () => {
+  it('is discarded when another Working State is loaded or a Slot recalled, so adopting can’t overwrite them', () => {
     const showing = dispatch(edited(), { type: 'flipAB' }).state;
     const loaded = dispatch(showing, { type: 'loadWorking', working: { ...snapshotWorking, mix: 9 } }).state;
-    expect(loaded.snapshot).toEqual({ state: snapshotWorking, showing: false });
+    expect(loaded.snapshot).toBeNull();
     expect(shownState(loaded).mix).toBe(9);
 
     const recalled = dispatch(showing, { type: 'recallSlot', slot: 0 }).state;
-    expect(recalled.snapshot).toEqual({ state: snapshotWorking, showing: false });
+    expect(recalled.snapshot).toBeNull();
     expect(shownState(recalled)).toEqual(edited().working);
   });
 });
