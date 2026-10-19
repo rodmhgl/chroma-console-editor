@@ -21,6 +21,8 @@ A full-featured software editor for the Hologram Chroma Console multi-effects pe
 
 Issues and specs live in GitHub Issues on rodmhgl/chroma-console-editor (via `gh`). See `docs/agents/issue-tracker.md`.
 
+When finishing work on an issue, comment on it before closing it: decisions made, decisions still pending, problems hit and how they were resolved, and any follow-up issues filed. Never close an issue without that comment.
+
 ### Triage labels
 
 Default labels: needs-triage, needs-info, ready-for-agent, ready-for-human, wontfix. See `docs/agents/triage-labels.md`.
