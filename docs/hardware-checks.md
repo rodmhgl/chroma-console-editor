@@ -92,7 +92,7 @@ The manual says the expression pedal can drive "any single primary control (TILT
 - **Steps:**
   1. Send `CC 17 = 54` (Movement → Phaser). Is Movement now Engaged (lit and heard), or still Bypassed with Phaser selected?
   2. Send `CC 17 = 120` (OFF), then `CC 17 = 54`. Is Movement Engaged now?
-- **Editor assumes:** unknown. Send All sends Effect selections before Engaged/Bypassed, so it re-asserts each Module's state either way; live edits may need to as well.
+- **Editor assumes:** unknown. Send All sends Effect selections before Engaged/Bypassed, so it re-asserts each Module's state either way. A live Effect change on a Bypassed Module re-sends Bypassed (e.g. `CC 17 = 54` then `CC 104 = 0`); if the pedal turns out not to engage the Module, that second message can go.
 - **Result:** _not yet run_
 
 ## 8. Does Gesture playback override Primary Control CCs sent during Send All?

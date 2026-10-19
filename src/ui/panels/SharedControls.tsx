@@ -1,8 +1,11 @@
+import { fxSetupParams } from '../../midi/map';
+import { ChoicePicker } from '../EffectPicker';
 import { ControlKnob } from '../Knob';
 
 /**
  * The pedal's top row of knobs: Tilt, Rate, Time and Mix, each tinted by the Module it drives, then Output Level, the
- * Secondary Control under Mix, which drives the whole pedal.
+ * Secondary Control under Mix, which drives the whole pedal. Below them, the FX Setup controls of no one Module:
+ * Capture Routing.
  */
 export function SharedControls() {
   return (
@@ -17,6 +20,9 @@ export function SharedControls() {
         <ControlKnob id="mix" />
         <ControlKnob id="outputLevel" />
       </div>
+      {fxSetupParams().map((id) => (
+        <ChoicePicker key={id} id={id} />
+      ))}
     </section>
   );
 }

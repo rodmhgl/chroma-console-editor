@@ -146,3 +146,48 @@ test('Tilt, Time, Mix and Output Level on the shared strip', async ({ page }) =>
   await shared.getByRole('slider', { name: 'Output Level' }).press('ArrowDown');
   await expect(lastLogged(page)).toHaveText('CC 78 = 63 → Output Level');
 });
+
+test('bypassing a Module keeps its Effect and greys it out; Engaging it again lights it', async ({ page }) => {
+  await page.goto('./');
+  const movement = page.getByRole('region', { name: 'Movement' });
+  const engaged = movement.getByRole('switch', { name: 'Engaged' });
+  const pedal = pedalOf(page);
+
+  await movement.getByRole('group', { name: 'Effect' }).getByRole('radio', { name: 'Phaser' }).check();
+  await expect(engaged).toBeChecked();
+  await expect(movement).not.toHaveClass(/is-bypassed/);
+
+  await engaged.click();
+  await expect(lastLogged(page)).toHaveText('CC 104 = 0 → Movement → Bypassed');
+  await expect(engaged).not.toBeChecked();
+  await expect(engaged).toHaveText('Bypassed');
+  await expect(movement).toHaveClass(/is-bypassed/);
+  await expect(movement.getByRole('radio', { name: 'Phaser' })).toBeChecked();
+  await expect(pedal.getByLabel('Movement Engaged')).toHaveText('Bypassed');
+  await expect(pedal.getByLabel('Movement Effect', { exact: true })).toHaveText('Phaser');
+  await expect(page.getByRole('region', { name: 'Character' })).not.toHaveClass(/is-bypassed/);
+
+  await engaged.press('Space');
+  await expect(lastLogged(page)).toHaveText('CC 104 = 127 → Movement → Engaged');
+  await expect(engaged).toBeChecked();
+  await expect(movement).not.toHaveClass(/is-bypassed/);
+});
+
+test('Filter style sits with Texture and Capture Routing with the shared controls', async ({ page }) => {
+  await page.goto('./');
+  const filterStyle = page.getByRole('region', { name: 'Texture' }).getByRole('group', { name: 'Filter style' });
+  const pedal = pedalOf(page);
+
+  await expect(filterStyle.getByRole('radio', { name: 'Tilt' })).toBeChecked();
+  await filterStyle.getByRole('radio', { name: 'Lowpass' }).check();
+  await expect(lastLogged(page)).toHaveText('CC 84 = 21 → Filter style → Lowpass');
+  await expect(pedal.getByLabel('Texture Filter style')).toHaveText('Lowpass');
+  await filterStyle.getByRole('radio', { name: 'Highpass' }).check();
+  await expect(lastLogged(page)).toHaveText('CC 84 = 107 → Filter style → Highpass');
+
+  const capture = page.getByRole('region', { name: 'Shared controls' }).getByRole('group', { name: 'Capture Routing' });
+  await expect(capture.getByRole('radio', { name: 'Post-FX' })).toBeChecked();
+  await capture.getByRole('radio', { name: 'Pre-FX' }).check();
+  await expect(lastLogged(page)).toHaveText('CC 83 = 127 → Capture Routing → Pre-FX');
+  await expect(pedal.getByLabel('Capture Routing')).toHaveText('Pre-FX');
+});

@@ -31,13 +31,18 @@ export type EffectControl = {
   octaves?: true;
 };
 
-/** One Effect a Module can host: the CC range that selects it, its midpoint, which is what the editor sends, and what its controls do. */
-export type EffectDef = {
+/** One named value of a CC: the range the pedal reads as it, and the value in that range the editor sends. */
+export type ChoiceDef = {
   id: string;
   label: string;
   min: number;
   max: number;
   value: number;
+  help?: string;
+};
+
+/** One Effect a Module can host: the CC range that selects it, its midpoint, which is what the editor sends, and what its controls do. */
+export type EffectDef = ChoiceDef & {
   help: string;
   controls: Partial<Record<ControlRole, EffectControl>>;
 };
@@ -46,14 +51,19 @@ export type ParamDef = {
   id: string;
   label: string;
   cc: number;
-  /** `continuous`: any of 0–127, sent as-is. `effect`: one of a Module's Effects, sent as the midpoint of its range. */
-  kind: 'continuous' | 'effect';
+  /**
+   * `continuous`: any of 0–127, sent as-is. `effect`: one of a Module's Effects, sent as the midpoint of its range.
+   * `choice`: one of a few named settings, such as Engaged or Bypassed, each sent as its own value.
+   */
+  kind: 'continuous' | 'effect' | 'choice';
   effects?: readonly EffectDef[];
+  choices?: readonly ChoiceDef[];
   /** The Module the control drives: Tilt is Character's, as its red knob shows. Output Level drives the whole pedal. */
   module?: ModuleId;
   /** Which of its Module's Effect's controls this is, when its meaning follows the Effect. */
   role?: ControlRole;
-  group: 'effect' | 'primary' | 'secondary';
+  /** `fxSetup`: saved in the Preset, but set on the pedal in its FX Setup menu, such as Filter style. */
+  group: 'effect' | 'engaged' | 'primary' | 'secondary' | 'fxSetup';
   scope: 'preset';
   min: number;
   max: number;
@@ -94,6 +104,51 @@ const effectSelection = <Id extends string, const E extends readonly EffectDef[]
   }) as const;
 
 const NEUTRAL = 64;
+
+type ChoiceOptions<C extends readonly ChoiceDef[]> = { group: 'engaged' | 'fxSetup'; default: C[number]['id']; module?: ModuleId };
+
+/** A control chosen from a few named values, which split the CC's 0–127 between them. */
+const choice = <Id extends string, const C extends readonly ChoiceDef[]>(id: Id, label: string, cc: number, choices: C, help: string, options: ChoiceOptions<C>) =>
+  ({
+    id,
+    label,
+    cc,
+    kind: 'choice',
+    choices,
+    ...(options.module && { module: options.module }),
+    group: options.group,
+    scope: 'preset',
+    min: 0,
+    max: 127,
+    default: choices.find((c) => c.id === options.default)!.value,
+    help,
+    transport: 'cc',
+  }) as const;
+
+/** Bypassed below 64, Engaged from 64; the editor sends 0 and 127. A Bypassed Module keeps its Effect. */
+const ENGAGED_CHOICES = [
+  { id: 'bypassed', label: 'Bypassed', min: 0, max: 63, value: 0 },
+  { id: 'engaged', label: 'Engaged', min: 64, max: 127, value: 127 },
+] as const satisfies readonly ChoiceDef[];
+
+const engaged = <Id extends string>(id: Id, cc: number, module: ModuleId) =>
+  choice(id, 'Engaged', cc, ENGAGED_CHOICES, `Whether the ${MODULES[module]} Module is processing. Bypassed, it keeps its Effect.`, {
+    group: 'engaged',
+    default: 'engaged',
+    module,
+  });
+
+/** The three Filter styles split CC 84 into thirds; the editor sends each third's midpoint. */
+const FILTER_STYLES = [
+  { id: 'lowpass', label: 'Lowpass', min: 0, max: 43, value: 21, help: 'A standalone low-pass filter: turn Amount left to cut high frequencies.' },
+  { id: 'tilt', label: 'Tilt', min: 44, max: 87, value: 65, help: 'The default: turn Amount left to cut high frequencies, right to cut low frequencies.' },
+  { id: 'highpass', label: 'Highpass', min: 88, max: 127, value: 107, help: 'A standalone high-pass filter: turn Amount right to cut low frequencies.' },
+] as const satisfies readonly ChoiceDef[];
+
+const CAPTURE_ROUTINGS = [
+  { id: 'postFx', label: 'Post-FX', min: 0, max: 63, value: 0, help: 'The default: Capture records after the effects.' },
+  { id: 'preFx', label: 'Pre-FX', min: 64, max: 127, value: 127, help: 'Capture records your dry signal before the effects, so the effects process the loop.' },
+] as const satisfies readonly ChoiceDef[];
 
 type LevelOptions = { module?: ModuleId; role?: ControlRole; default?: number; sides?: readonly [string, string] };
 
@@ -253,6 +308,19 @@ export const PARAMS = {
   diffusionEffectVol: effectVol('diffusionEffectVol', 77, 'diffusion', 'The volume of the Diffusion Module’s wet signal only, against the dry. Neutral at centre.'),
   outputLevel: level('outputLevel', 'Output Level', 78, 'secondary', 'Cuts or boosts the volume of the pedal’s effected output. Neutral at centre.', { sides: CUT_BOOST }),
   textureEffectVol: effectVol('textureEffectVol', 79, 'texture'),
+  characterEngaged: engaged('characterEngaged', 103, 'character'),
+  movementEngaged: engaged('movementEngaged', 104, 'movement'),
+  diffusionEngaged: engaged('diffusionEngaged', 105, 'diffusion'),
+  textureEngaged: engaged('textureEngaged', 106, 'texture'),
+  filterStyle: choice('filterStyle', 'Filter style', 84, FILTER_STYLES, 'How the Texture Module’s Filter Effect shapes the tone: Tilt, Lowpass or Highpass.', {
+    group: 'fxSetup',
+    default: 'tilt',
+    module: 'texture',
+  }),
+  captureRouting: choice('captureRouting', 'Capture Routing', 83, CAPTURE_ROUTINGS, 'Where Capture records in the chain: after the effects or before them.', {
+    group: 'fxSetup',
+    default: 'postFx',
+  }),
 } as const satisfies Record<string, ParamDef>;
 
 export type ParamId = keyof typeof PARAMS;
@@ -267,11 +335,40 @@ export type EffectParamId = {
   [K in ParamId]: (typeof PARAMS)[K]['kind'] extends 'effect' ? K : never;
 }[ParamId];
 
+/** A setting chosen from a few named values: Engaged/Bypassed, Filter style, Capture routing. */
+export type ChoiceParamId = {
+  [K in ParamId]: (typeof PARAMS)[K]['kind'] extends 'choice' ? K : never;
+}[ParamId];
+
 /** A 0–127 knob. */
-export type LevelParamId = Exclude<PresetParamId, EffectParamId>;
+export type LevelParamId = Exclude<PresetParamId, EffectParamId | ChoiceParamId>;
 
 /** The Effect ids an Effect selection offers, e.g. 'howl'. */
 export type EffectId<P extends EffectParamId = EffectParamId> = (typeof PARAMS)[P]['effects'][number]['id'];
+
+/** The choice ids a setting offers, e.g. 'lowpass'. */
+export type ChoiceId<P extends ChoiceParamId = ChoiceParamId> = (typeof PARAMS)[P]['choices'][number]['id'];
+
+/** Each Module's Engaged/Bypassed (CC 103–106). */
+export const ENGAGED_PARAMS = {
+  character: 'characterEngaged',
+  movement: 'movementEngaged',
+  diffusion: 'diffusionEngaged',
+  texture: 'textureEngaged',
+} as const satisfies Record<ModuleId, ChoiceParamId>;
+
+/** Whether the Working State `working` has `module` Engaged. */
+export function isEngaged(working: Readonly<Record<PresetParamId, number>>, module: ModuleId): boolean {
+  const id = ENGAGED_PARAMS[module];
+  return choiceAt(PARAMS[id], working[id])?.id === 'engaged';
+}
+
+/** The FX Setup controls that belong to `module`'s column (Filter style for Texture), or to no Module. */
+export function fxSetupParams(module?: ModuleId): ChoiceParamId[] {
+  return (Object.values(PARAMS) as ParamDef[])
+    .filter((p) => p.group === 'fxSetup' && p.module === module)
+    .map((p) => p.id as ChoiceParamId);
+}
 
 const byCc = new Map<number, ParamDef>(Object.values(PARAMS).map((p) => [p.cc, p]));
 
@@ -284,19 +381,27 @@ export function effectAt(param: ParamDef, value: number): EffectDef | undefined 
   return param.effects?.find((e) => value >= e.min && value <= e.max);
 }
 
-/** What a control is set to, as the pedal names it: an Effect (or OFF for 110–127); undefined for a plain level. */
-export function settingLabel(param: ParamDef, value: number): string | undefined {
-  if (param.kind !== 'effect') return undefined;
-  return effectAt(param, value)?.label ?? 'OFF';
+/** The named value of an Effect selection or choice that `value` falls in, as the pedal reads it. */
+export function choiceAt(param: ParamDef, value: number): ChoiceDef | undefined {
+  return (param.effects ?? param.choices)?.find((c) => value >= c.min && value <= c.max);
 }
 
 /**
- * Rounds and clamps a value into the range the parameter accepts. An Effect selection snaps to the midpoint of the
- * Effect whose range holds it, and never into OFF.
+ * What a control is set to, as the pedal names it: an Effect (or OFF for 110–127) or a choice such as Bypassed;
+ * undefined for a plain level.
+ */
+export function settingLabel(param: ParamDef, value: number): string | undefined {
+  if (param.kind === 'continuous') return undefined;
+  return choiceAt(param, value)?.label ?? 'OFF';
+}
+
+/**
+ * Rounds and clamps a value into the range the parameter accepts. An Effect selection or choice snaps to the value
+ * the editor sends for the one whose range holds it, so an Effect selection never lands in OFF.
  */
 export function clampToParam(param: ParamDef, value: number): number {
   const v = Math.min(param.max, Math.max(param.min, Math.round(value)));
-  return param.kind === 'effect' ? effectAt(param, v)!.value : v;
+  return param.kind === 'continuous' ? v : choiceAt(param, v)!.value;
 }
 
 /** The Effect selection of each Module. */
@@ -367,7 +472,6 @@ const halves = (low: string, high: string): ValueBands => [
   [63, low],
   [127, high],
 ];
-const ENGAGED_BANDS = halves('Bypassed', 'Engaged');
 const thirds = (low: string, middle: string, high: string): ValueBands => [
   [43, low],
   [87, middle],
@@ -382,9 +486,7 @@ const MIDI_CHART: Record<number, ChartEntry> = {
   80: { name: 'Gesture', values: halves('Play', 'Record') },
   81: { name: 'Gesture → Stop/Erase' },
   82: { name: 'Capture', values: thirds('Stop/Clear', 'Play', 'Record') },
-  83: { name: 'Capture Routing', values: halves('Post-FX', 'Pre-FX') },
-  84: { name: 'Filter style', values: thirds('Lowpass', 'Tilt', 'Highpass') },
-  91: { name: 'Pedal', values: ENGAGED_BANDS },
+  91: { name: 'Pedal', values: halves('Bypassed', 'Engaged') },
   92: {
     name: 'Dual Bypass',
     values: [
@@ -404,20 +506,18 @@ const MIDI_CHART: Record<number, ChartEntry> = {
     ],
   },
   95: { name: 'Calibration menu', values: halves('Exit', 'Enter') },
-  103: { name: 'Character', values: ENGAGED_BANDS },
-  104: { name: 'Movement', values: ENGAGED_BANDS },
-  105: { name: 'Diffusion', values: ENGAGED_BANDS },
-  106: { name: 'Texture', values: ENGAGED_BANDS },
 };
 
 /**
- * What a CC and value do on the pedal, e.g. "Character → Howl" for CC 16 = 76 or "Character → Amount" for a level;
- * undefined for a CC not in the MIDI implementation chart.
+ * What a CC and value do on the pedal, e.g. "Character → Howl" for CC 16 = 76, "Character → Bypassed" for CC 103 = 0,
+ * "Filter style → Lowpass" for CC 84 = 21 or "Character → Amount" for a level; undefined for a CC not in the MIDI
+ * implementation chart.
  */
 export function describeCc(cc: number, value: number): string | undefined {
   const param = paramByCc(cc);
   if (param) {
     const setting = settingLabel(param, value) ?? param.label;
+    if (param.group === 'fxSetup') return `${param.label} → ${setting}`;
     return param.module ? `${MODULES[param.module]} → ${setting}` : setting;
   }
   const entry = MIDI_CHART[cc];

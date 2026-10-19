@@ -108,6 +108,24 @@ describe('editor store sending', () => {
     expect(sentTo(pedal)).toEqual(['CC 16 = 76 → Character → Howl']);
   });
 
+  it('sends Engaged/Bypassed and a choice such as Filter style at once, never throttled', () => {
+    vi.useFakeTimers();
+    const pedal = createVirtualPedal();
+    const store = createEditorStore(pedal);
+
+    store.getState().setEngaged('texture', false);
+    store.getState().setEngaged('texture', true);
+    store.getState().selectChoice('filterStyle', 'lowpass');
+    store.getState().selectChoice('captureRouting', 'preFx');
+
+    expect(sentTo(pedal)).toEqual([
+      'CC 106 = 0 → Texture → Bypassed',
+      'CC 106 = 127 → Texture → Engaged',
+      'CC 84 = 21 → Filter style → Lowpass',
+      'CC 83 = 127 → Capture Routing → Pre-FX',
+    ]);
+  });
+
   it('throttles a drag per parameter, always sending the latest value last', () => {
     vi.useFakeTimers();
     const pedal = createVirtualPedal();

@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { decode } from '../midi/decode';
 import type { MidiMessage } from '../midi/encode';
-import { paramByCc, type EffectId, type EffectParamId, type PresetParamId } from '../midi/map';
+import { paramByCc, type ChoiceId, type ChoiceParamId, type EffectId, type EffectParamId, type ModuleId, type PresetParamId } from '../midi/map';
 import { createThrottle } from '../midi/throttle';
 import { pedalOutputToSelect } from '../midi/transport/ports';
 import type { MidiPort } from '../midi/transport/types';
@@ -22,6 +22,10 @@ type EditorStore = {
   setParam(id: PresetParamId, value: number): void;
   /** Chooses a Module's Effect by name and sends it. */
   selectEffect<P extends EffectParamId>(id: P, effect: EffectId<P>): void;
+  /** Engages or Bypasses a Module and sends it; its Effect stays selected. */
+  setEngaged(module: ModuleId, engaged: boolean): void;
+  /** Chooses a setting such as Filter style by name and sends it. */
+  selectChoice<P extends ChoiceParamId>(id: P, choice: ChoiceId<P>): void;
   webMidi: WebMidi | null;
   webMidiStatus: WebMidiStatus;
   /** Virtual Pedal first, then every connected Web MIDI output. */
@@ -98,6 +102,12 @@ export function createEditorStore(virtualPedal: VirtualPedal) {
       },
       selectEffect(id, effect) {
         apply({ type: 'selectEffect', id, effect });
+      },
+      setEngaged(module, engaged) {
+        apply({ type: 'setEngaged', module, engaged });
+      },
+      selectChoice(id, choice) {
+        apply({ type: 'selectChoice', id, choice });
       },
       webMidi: null,
       webMidiStatus: 'pending',

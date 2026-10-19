@@ -47,9 +47,23 @@ const LEVELS = [
   ['textureEffectVol', 79],
 ] as const;
 
+/** Each Module's Engaged/Bypassed and the CC the MIDI implementation chart gives it. */
+const ENGAGED = [
+  ['character', 'characterEngaged', 103],
+  ['movement', 'movementEngaged', 104],
+  ['diffusion', 'diffusionEngaged', 105],
+  ['texture', 'textureEngaged', 106],
+] as const;
+
+/** The preset settings chosen from a short list, each choice sent as the midpoint of its range. */
+const CHOICES = [
+  ['filterStyle', 84, [['lowpass', 21], ['tilt', 65], ['highpass', 107]]],
+  ['captureRouting', 83, [['postFx', 0], ['preFx', 127]]],
+] as const;
+
 describe('the pedal map', () => {
   it('has a byte test below for every row', () => {
-    const tested = [...EFFECTS.map(([id]) => id), ...LEVELS.map(([id]) => id)];
+    const tested = [...EFFECTS.map(([id]) => id), ...LEVELS.map(([id]) => id), ...ENGAGED.map(([, id]) => id), ...CHOICES.map(([id]) => id)];
     expect(tested.sort()).toEqual(Object.keys(PARAMS).sort());
   });
 });
@@ -112,8 +126,94 @@ describe('setParam', () => {
   );
 });
 
+describe('setEngaged', () => {
+  it.each(ENGAGED)('%s sends CC %i = 0 to Bypass and 127 to Engage, keeping its Effect', (module, id, cc) => {
+    const before = dispatch(onMidiChannel5(), { type: 'setParam', id: `${module}Effect`, value: 76 }).state;
+
+    const bypassed = dispatch(before, { type: 'setEngaged', module, engaged: false });
+    expect(bypassed.messages).toEqual([[0xb4, cc, 0]]);
+    expect(bypassed.state.working[id]).toBe(0);
+    expect(bypassed.state.working[`${module}Effect`]).toBe(76);
+
+    const engaged = dispatch(bypassed.state, { type: 'setEngaged', module, engaged: true });
+    expect(engaged.messages).toEqual([[0xb4, cc, 127]]);
+    expect(engaged.state.working[`${module}Effect`]).toBe(76);
+  });
+
+  it('leaves a Bypassed Module Bypassed when its Effect changes, saying so again in case the pedal engaged it', () => {
+    const { state, messages } = run(
+      onMidiChannel5(),
+      { type: 'setEngaged', module: 'movement', engaged: false },
+      { type: 'selectEffect', id: 'movementEffect', effect: 'phaser' },
+    );
+
+    expect(messages).toEqual([
+      [0xb4, 104, 0],
+      [0xb4, 17, 54],
+      [0xb4, 104, 0],
+    ]);
+    expect(state.working.movementEngaged).toBe(0);
+  });
+});
+
+describe('selectChoice', () => {
+  it.each(CHOICES.flatMap(([id, cc, choices]) => choices.map(([choice, value]) => [id, choice, cc, value] as const)))(
+    '%s %s sends CC %i = %i',
+    (id, choice, cc, value) => {
+      const { state, messages } = dispatch(onMidiChannel5(), { type: 'selectChoice', id, choice } as EditorAction);
+
+      expect(messages).toEqual([[0xb4, cc, value]]);
+      expect(state.working[id]).toBe(value);
+    },
+  );
+
+  it('ignores a choice the setting doesn’t offer', () => {
+    const { state, messages } = dispatch(onMidiChannel5(), { type: 'selectChoice', id: 'filterStyle', choice: 'preFx' } as EditorAction);
+
+    expect(messages).toEqual([]);
+    expect(state.working.filterStyle).toBe(65);
+  });
+
+  it('snaps a raw value to the choice whose range holds it', () => {
+    const { messages } = run(
+      onMidiChannel5(),
+      { type: 'setParam', id: 'filterStyle', value: 40 },
+      { type: 'setParam', id: 'filterStyle', value: 90 },
+      { type: 'setParam', id: 'textureEngaged', value: 63 },
+      { type: 'setParam', id: 'textureEngaged', value: 64 },
+    );
+
+    expect(messages).toEqual([
+      [0xb4, 84, 21],
+      [0xb4, 84, 107],
+      [0xb4, 106, 0],
+      [0xb4, 106, 127],
+    ]);
+  });
+});
+
+describe('the OFF range of an Effect selection', () => {
+  it('is never sent, whatever value any action is given', () => {
+    const state = onMidiChannel5();
+    const actions: EditorAction[] = (Object.keys(PARAMS) as (keyof typeof PARAMS)[]).flatMap((id) =>
+      Array.from({ length: 130 }, (_, v) => ({ type: 'setParam', id, value: v - 1 }) as const),
+    );
+    actions.push(...EFFECTS.flatMap(([id, , effects]) => effects.map((effect) => ({ type: 'selectEffect', id, effect }) as EditorAction)));
+    actions.push(...ENGAGED.flatMap(([module]) => [true, false].map((engaged) => ({ type: 'setEngaged', module, engaged }) as const)));
+    actions.push(...CHOICES.flatMap(([id, , choices]) => choices.map(([choice]) => ({ type: 'selectChoice', id, choice }) as EditorAction)));
+
+    // From a fresh state and from one with every Module Bypassed, which re-sends Bypassed after an Effect change.
+    const bypassed = run(state, ...ENGAGED.map(([module]) => ({ type: 'setEngaged', module, engaged: false }) as const)).state;
+    const sent = [state, bypassed].flatMap((from) => actions.flatMap((action) => dispatch(from, action).messages));
+    const effectSelections = sent.filter(([, cc]) => cc! >= 16 && cc! <= 19);
+
+    expect(effectSelections.length).toBeGreaterThan(0);
+    expect(effectSelections.filter(([, , value]) => value! >= 110)).toEqual([]);
+  });
+});
+
 describe('the initial Editor State', () => {
-  it('sends on MIDI channel 1 from the manual’s baseline: first Effects, Mix 100%, Tilt and Secondary Controls neutral, no Drift', () => {
+  it('sends on MIDI channel 1 from the manual’s baseline: first Effects, all Engaged, Mix 100%, Tilt and Secondary Controls neutral, no Drift, Filter style Tilt, Capture post-FX', () => {
     const state = initialEditorState();
 
     expect(state.global).toEqual({ midiChannel: 1 });
@@ -138,6 +238,12 @@ describe('the initial Editor State', () => {
       movementEffectVol: 64,
       diffusionEffectVol: 64,
       textureEffectVol: 64,
+      characterEngaged: 127,
+      movementEngaged: 127,
+      diffusionEngaged: 127,
+      textureEngaged: 127,
+      filterStyle: 65,
+      captureRouting: 0,
     });
   });
 });
