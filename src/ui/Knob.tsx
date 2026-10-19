@@ -1,5 +1,6 @@
 import { useId, type CSSProperties } from 'react';
 import { PARAMS, readControl, type ControlReading, type LevelParamId, type ParamDef } from '../midi/map';
+import { shownState } from '../model/core';
 import { useEditorStore } from '../store/editorStore';
 import { useValueDrag } from './useValueDrag';
 
@@ -69,7 +70,7 @@ export function Knob({ param, value, onChange, reading }: Props) {
 
 /** A knob for one Working State control, read and sent through the editor store. */
 export function ControlKnob({ id }: { id: LevelParamId }) {
-  const working = useEditorStore((s) => s.editor.working);
+  const working = useEditorStore((s) => shownState(s.editor));
   const setParam = useEditorStore((s) => s.setParam);
   return <Knob param={PARAMS[id]} value={working[id]} reading={readControl(id, working)} onChange={(v) => setParam(id, v)} />;
 }

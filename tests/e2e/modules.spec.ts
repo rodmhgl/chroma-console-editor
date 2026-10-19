@@ -24,6 +24,8 @@ test('choosing Howl and dragging Amount reach the Virtual Pedal', async ({ page 
 
   const amount = character.getByRole('slider', { name: 'Amount' });
   await expect(amount).toHaveAttribute('aria-valuenow', '64');
+  // The mouse only reaches what is in view.
+  await amount.scrollIntoViewIfNeeded();
   const box = (await amount.boundingBox())!;
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   await page.mouse.down();

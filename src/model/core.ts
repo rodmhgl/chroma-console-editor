@@ -46,7 +46,15 @@ export type EditorState = {
   confirmed: Record<PedalStepParamId, number>;
   /** What the editor believes each Slot holds: what it last committed there. Never confirmed by the pedal. */
   slotMap: SlotMap;
+  /** The Snapshot taken for A/B comparison, if any. */
+  snapshot: Snapshot | null;
 };
+
+/**
+ * A frozen copy of the Working State for A/B comparison. While `showing`, the screen shows it and the pedal sounds it,
+ * and the Working State waits unchanged to be flipped back to.
+ */
+export type Snapshot = { state: WorkingState; showing: boolean };
 
 export type EditorAction =
   /** Any Working State param, clamped into its range. */
@@ -59,7 +67,7 @@ export type EditorAction =
   | { type: 'selectChoice'; id: ChoiceParamId; choice: ChoiceId }
   /**
    * A whole new Working State (an opened Preset, or New), clamped. Sends nothing: the store follows it with Send All,
-   * and it is Possibly Stale until that finishes. Clears the undo history, whose steps belong to the old one.
+   * and it is Possibly Stale until that finishes. Clears the undo history and the Snapshot, which belong to the old one.
    */
   | { type: 'loadWorking'; working: WorkingState }
   /**
@@ -80,6 +88,14 @@ export type EditorAction =
   /** Starts a knob drag: every edit until `endDrag` undoes as one step. */
   | { type: 'beginDrag' }
   | { type: 'endDrag' }
+  /** Freezes a copy of the Working State to compare against, replacing any Snapshot. Sends nothing. */
+  | { type: 'takeSnapshot' }
+  /** Flips between the Snapshot and the Working State, sending only the MIDI-reachable values that differ. */
+  | { type: 'flipAB' }
+  /** Makes the Snapshot the Working State, as one undo step, and drops it. */
+  | { type: 'adoptSnapshot' }
+  /** Drops the Snapshot, flipping back to the Working State first if it was showing. */
+  | { type: 'discardSnapshot' }
   /** Restores the Working State controls the last step changed, re-sending them so the pedal matches the screen. */
   | { type: 'undo' }
   | { type: 'redo' }
@@ -105,17 +121,34 @@ export function initialEditorState(): EditorState {
     midiSync: INITIAL_SYNC_STATUS,
     confirmed: pedalStepValues(working),
     slotMap: EMPTY_SLOT_MAP,
+    snapshot: null,
   };
 }
+
+/** What the screen shows and the pedal should be sounding: the Snapshot while it is showing, otherwise the Working State. */
+export function shownState(state: Pick<EditorState, 'working' | 'snapshot'>): WorkingState {
+  return state.snapshot?.showing ? state.snapshot.state : state.working;
+}
+
+/** The Pedal Step settings the Snapshot and the Working State differ in: flipping A/B can't change them on the pedal. */
+export function inexactPedalSteps(state: Pick<EditorState, 'working' | 'snapshot'>): PedalStepParamId[] {
+  const { snapshot } = state;
+  if (!snapshot) return [];
+  return PEDAL_STEP_PARAMS.filter((id) => snapshot.state[id] !== state.working[id]);
+}
+
+/** What would change the Working State or the Snapshot: ignored while the Snapshot is showing, so that it stays frozen. */
+const FROZEN_WHILE_SHOWING = new Set<EditorAction['type']>(['setParam', 'selectEffect', 'setEngaged', 'selectChoice', 'setModuleOrder', 'undo', 'redo', 'takeSnapshot']);
 
 /** The Pedal Step settings of a Working State. */
 function pedalStepValues(working: WorkingState): Record<PedalStepParamId, number> {
   return Object.fromEntries(PEDAL_STEP_PARAMS.map((id) => [id, working[id]])) as Record<PedalStepParamId, number>;
 }
 
-/** The Pedal Step settings whose Working State value the user hasn't confirmed applying on the pedal. */
-export function unconfirmedPedalSteps(state: Pick<EditorState, 'working' | 'confirmed'>): PedalStepParamId[] {
-  return PEDAL_STEP_PARAMS.filter((id) => state.working[id] !== state.confirmed[id]);
+/** The Pedal Step settings whose shown value (see `shownState`) the user hasn't confirmed applying on the pedal. */
+export function unconfirmedPedalSteps(state: Pick<EditorState, 'working' | 'confirmed' | 'snapshot'>): PedalStepParamId[] {
+  const shown = shownState(state);
+  return PEDAL_STEP_PARAMS.filter((id) => shown[id] !== state.confirmed[id]);
 }
 
 /** How far the editor trusts that the pedal is sounding the Working State: an unconfirmed Pedal Step spoils In Sync. */
@@ -125,6 +158,7 @@ export function syncStatus(state: EditorState): SyncStatus {
 
 /** The Editor State after `action`, and the MIDI to send for it. */
 export function dispatch(state: EditorState, action: EditorAction): CoreResult {
+  if (state.snapshot?.showing && FROZEN_WHILE_SHOWING.has(action.type)) return { state, messages: [] };
   switch (action.type) {
     case 'setParam':
       return setParam(state, action.id, action.value);
@@ -141,13 +175,19 @@ export function dispatch(state: EditorState, action: EditorAction): CoreResult {
       const working = Object.fromEntries(
         PRESET_PARAMS.map((p) => [p.id, clampToParam(p, action.working[p.id as PresetParamId])]),
       ) as WorkingState;
-      return { state: sync({ ...state, working, history: history.EMPTY_HISTORY }, 'load'), messages: [] };
+      return { state: sync({ ...state, working, history: history.EMPTY_HISTORY, snapshot: null }, 'load'), messages: [] };
     }
     case 'recallSlot': {
       if (!slotAddress(action.slot)) return { state, messages: [] };
       const entry = state.slotMap[action.slot];
-      // Earlier steps belong to the state the Slot replaced: undoing one would send a single CC into it.
-      const recalled = { ...state, working: entry?.committed ?? state.working, history: history.EMPTY_HISTORY };
+      // Earlier steps belong to the state the Slot replaced: undoing one would send a single CC into it. So does the
+      // Snapshot, which adopting would put in place of the Slot's state.
+      const recalled = {
+        ...state,
+        working: entry?.committed ?? state.working,
+        history: history.EMPTY_HISTORY,
+        snapshot: null,
+      };
       // The Slot was committed with its Pedal Steps done, so the pedal now holds its Pedal Step settings too.
       if (entry) recalled.confirmed = pedalStepValues(entry.committed);
       return {
@@ -161,7 +201,7 @@ export function dispatch(state: EditorState, action: EditorAction): CoreResult {
       return setParam(state, 'moduleOrder', index);
     }
     case 'confirmPedalStep':
-      return { state: { ...state, confirmed: { ...state.confirmed, [action.id]: state.working[action.id] } }, messages: [] };
+      return { state: { ...state, confirmed: { ...state.confirmed, [action.id]: shownState(state)[action.id] } }, messages: [] };
     case 'setMidiChannel': {
       if (action.midiChannel === state.global.midiChannel) return { state, messages: [] };
       const next = { ...state, global: { ...state.global, midiChannel: action.midiChannel } };
@@ -184,6 +224,19 @@ export function dispatch(state: EditorState, action: EditorAction): CoreResult {
       return { state: { ...state, history: history.beginDrag(state.history) }, messages: [] };
     case 'endDrag':
       return { state: { ...state, history: history.endDrag(state.history) }, messages: [] };
+    case 'takeSnapshot':
+      return { state: { ...state, snapshot: { state: state.working, showing: false } }, messages: [] };
+    case 'flipAB':
+      if (!state.snapshot) return { state, messages: [] };
+      return sendDifference(state, { ...state, snapshot: { ...state.snapshot, showing: !state.snapshot.showing } });
+    case 'adoptSnapshot': {
+      if (!state.snapshot) return { state, messages: [] };
+      const adopted = state.snapshot.state;
+      return sendDifference(state, { ...state, working: adopted, snapshot: null, history: history.recordAll(state.history, state.working, adopted) });
+    }
+    case 'discardSnapshot':
+      if (!state.snapshot) return { state, messages: [] };
+      return sendDifference(state, { ...state, snapshot: null });
     case 'undo':
     case 'redo': {
       const move = action.type === 'undo' ? history.undo(state.history) : history.redo(state.history);
@@ -212,6 +265,25 @@ export function dispatch(state: EditorState, action: EditorAction): CoreResult {
 
 function sync(state: EditorState, event: SyncEvent): EditorState {
   return { ...state, midiSync: nextSyncStatus(state.midiSync, event) };
+}
+
+/**
+ * `next`, with the live sends that take the pedal from what `state` shows to what `next` shows: only the MIDI-reachable
+ * values that differ, in Send All order.
+ */
+function sendDifference(state: EditorState, next: EditorState): CoreResult {
+  const from = shownState(state);
+  const to = shownState(next);
+  const changed = sendAllOrder().filter((id) => from[id] !== to[id]);
+  // Said again for a Bypassed Module whose Effect changes, as `setParam` does (hardware check 7).
+  const resaidBypassed = changed.flatMap((id) => {
+    const { kind, module } = PARAMS[id] as ParamDef;
+    return kind === 'effect' && module && !isEngaged(to, module) ? [ENGAGED_PARAMS[module]] : [];
+  });
+  const ids = new Set<CcParamId>([...changed, ...resaidBypassed]);
+  if (ids.size === 0) return { state: next, messages: [] };
+  const sent = sync(next, 'edit');
+  return { state: sent, messages: sendAllOrder().filter((id) => ids.has(id)).map((id) => encodeParam(sent, id)) };
 }
 
 function selectChoice(state: EditorState, id: ChoiceParamId, choiceId: string): CoreResult {
@@ -244,9 +316,9 @@ function setParam(state: EditorState, id: PresetParamId, value: number, undoable
   return { state: next, messages };
 }
 
-/** One Working State control as the CC that sets it on the pedal. */
+/** One shown control (see `shownState`) as the CC that sets it on the pedal. */
 export function encodeParam(state: EditorState, id: CcParamId): MidiMessage {
-  return controlChange(state.global.midiChannel, PARAMS[id].cc, state.working[id]);
+  return controlChange(state.global.midiChannel, PARAMS[id].cc, shownState(state)[id]);
 }
 
 /** Send All goes group by group in this order, each group in pedal map order (SPEC.md, Implementation Decisions). */
@@ -257,7 +329,7 @@ export function sendAllOrder(): CcParamId[] {
   return SEND_ALL_GROUPS.flatMap((group) => PRESET_PARAMS.filter((p) => p.group === group && p.transport === 'cc').map((p) => p.id as CcParamId));
 }
 
-/** The full Working State as MIDI, in Send All order. */
+/** Everything shown (see `shownState`) as MIDI, in Send All order. */
 export function encodeSendAll(state: EditorState): MidiMessage[] {
   return sendAllOrder().map((id) => encodeParam(state, id));
 }

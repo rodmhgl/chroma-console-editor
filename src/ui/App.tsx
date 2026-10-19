@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { virtualPedal } from '../store/editorStore';
+import { useEditorStore, virtualPedal } from '../store/editorStore';
 import { useSettingsStore } from '../store/settingsStore';
 import { ConnectionBar, SyncUnknownNote, WebMidiNote } from './ConnectionBar';
 import { DataDrawer } from './drawer/DataDrawer';
@@ -8,15 +8,18 @@ import { Modules } from './panels/ModuleColumn';
 import { PedalStepsPanel } from './panels/PedalStepsPanel';
 import { PerformancePanel } from './panels/PerformancePanel';
 import { SharedControls } from './panels/SharedControls';
+import { SnapshotBar } from './panels/SnapshotBar';
 import { useShortcuts } from './useShortcuts';
 import { VirtualPedalView } from './VirtualPedalView';
 
 /**
- * The editor: the connection bar, then the console of shared controls and Modules, any Pedal Steps waiting to be done,
- * the Performance Controls and Global Settings apart from the console, and the Virtual Pedal.
+ * The editor: the connection bar, then Snapshot A/B and the console of shared controls and Modules (not editable while
+ * the Snapshot shows), any Pedal Steps waiting to be done, the Performance Controls and Global Settings apart from the
+ * console, and the Virtual Pedal.
  */
 export function App() {
   const theme = useSettingsStore((s) => s.theme);
+  const showingSnapshot = useEditorStore((s) => s.editor.snapshot?.showing ?? false);
   useLayoutScale();
   useShortcuts();
   // app.css themes the page from this.
@@ -34,7 +37,8 @@ export function App() {
         <main className="main-column">
           <WebMidiNote />
           <SyncUnknownNote />
-          <section className="console" aria-label="Editor">
+          <SnapshotBar />
+          <section className="console" aria-label="Editor" inert={showingSnapshot}>
             <SharedControls />
             <Modules />
           </section>
