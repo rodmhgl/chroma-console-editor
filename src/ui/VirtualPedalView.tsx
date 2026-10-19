@@ -15,7 +15,8 @@ export function VirtualPedalView({ pedal }: { pedal: VirtualPedal }) {
         <dd>
           <output aria-label="MIDI channel">{midiChannel}</output>
         </dd>
-        {(Object.values(PARAMS) as ParamDef[]).map((param) => {
+        {/* MIDI can't reach a Pedal Step setting, so the Virtual Pedal never learns it. */}
+        {(Object.values(PARAMS) as ParamDef[]).filter((p) => p.transport === 'cc').map((param) => {
           const name = param.module ? `${MODULES[param.module]} ${param.label}` : param.label;
           const value = state[param.id as PresetParamId];
           return [

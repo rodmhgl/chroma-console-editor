@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { VIRTUAL_PEDAL_PORT, createVirtualPedal } from '../midi/transport/virtual';
-import { encodeSendAll } from '../model/core';
+import { encodeSendAll, syncStatus } from '../model/core';
 import { canRedo, canUndo } from '../model/history';
 import { createEditorStore } from './editorStore';
 
@@ -240,7 +240,7 @@ describe('editor store Raw MIDI', () => {
 
     store.getState().sendRaw([0xb0, 64, 0]);
 
-    expect(store.getState().editor.sync).toBe('possiblyStale');
+    expect(syncStatus(store.getState().editor)).toBe('possiblyStale');
   });
 });
 
@@ -250,7 +250,7 @@ describe('editor store Send All', () => {
   const heardBy = (pedal: ReturnType<typeof createVirtualPedal>) => pedal.getSnapshot().log.map((e) => e.text);
 
   it('starts Possibly Stale, with the Virtual Pedal selected', () => {
-    expect(createEditorStore(createVirtualPedal()).getState().editor.sync).toBe('possiblyStale');
+    expect(syncStatus(createEditorStore(createVirtualPedal()).getState().editor)).toBe('possiblyStale');
   });
 
   it('sends every setting with the Send All gap between messages, then is In Sync', async () => {
@@ -267,14 +267,14 @@ describe('editor store Send All', () => {
     expect(heardBy(pedal)).toHaveLength(2);
     await vi.advanceTimersByTimeAsync(1);
     expect(heardBy(pedal).at(-1)).toBe('CC 17 = 10 → Movement → Doubler');
-    expect(store.getState().editor.sync).toBe('possiblyStale');
+    expect(syncStatus(store.getState().editor)).toBe('possiblyStale');
 
     await vi.runAllTimersAsync();
     expect(await done).toBe(true);
     expect(heardBy(pedal)).toHaveLength(27);
     expect(heardBy(pedal).at(-1)).toBe('CC 106 = 127 → Texture → Engaged');
     expect(store.getState().sendingAll).toBe(false);
-    expect(store.getState().editor.sync).toBe('inSync');
+    expect(syncStatus(store.getState().editor)).toBe('inSync');
   });
 
   it('sends exactly the editor core’s Send All bytes, in order', async () => {
@@ -317,7 +317,7 @@ describe('editor store Send All', () => {
     expect(await done).toBe(false);
     expect(heardBy(pedal)).toHaveLength(1);
     expect(store.getState().sendingAll).toBe(false);
-    expect(store.getState().editor.sync).toBe('possiblyStale');
+    expect(syncStatus(store.getState().editor)).toBe('possiblyStale');
   });
 });
 
@@ -327,14 +327,14 @@ describe('editor store Sync Status', () => {
     const midi = fakeWebMidi([pedal]);
     const store = await connectedStore();
     await store.getState().sendAll();
-    expect(store.getState().editor.sync).toBe('inSync');
+    expect(syncStatus(store.getState().editor)).toBe('inSync');
 
     midi.unplug(pedal);
-    expect(store.getState().editor.sync).toBe('unknown');
+    expect(syncStatus(store.getState().editor)).toBe('unknown');
 
     pedal.state = 'connected';
     midi.plug(pedal);
-    expect(store.getState().editor.sync).toBe('possiblyStale');
+    expect(syncStatus(store.getState().editor)).toBe('possiblyStale');
   });
 
   it('is Possibly Stale when another output is selected', async () => {
@@ -344,7 +344,7 @@ describe('editor store Sync Status', () => {
     await store.getState().sendAll();
 
     store.getState().setOutput('din');
-    expect(store.getState().editor.sync).toBe('possiblyStale');
+    expect(syncStatus(store.getState().editor)).toBe('possiblyStale');
   });
 
   it('is Possibly Stale after a send fails', async () => {
@@ -358,7 +358,7 @@ describe('editor store Sync Status', () => {
     });
     store.getState().selectEffect('characterEffect', 'fuzz');
 
-    expect(store.getState().editor.sync).toBe('possiblyStale');
+    expect(syncStatus(store.getState().editor)).toBe('possiblyStale');
     expect(store.getState().sent.map((m) => m.bytes)).not.toContainEqual([0xb0, 16, 54]);
   });
 
@@ -372,7 +372,7 @@ describe('editor store Sync Status', () => {
 
     expect(await store.getState().sendAll()).toBe(false);
     expect(usb.send).toHaveBeenCalledTimes(1);
-    expect(store.getState().editor.sync).toBe('possiblyStale');
+    expect(syncStatus(store.getState().editor)).toBe('possiblyStale');
   });
 });
 
@@ -443,7 +443,7 @@ describe('editor store Slot recall', () => {
     expect(store.getState().recallSlot(33)).toBe(true);
 
     expect(heardBy(pedal)).toEqual(['PC 33 → Recall Slot B-14']);
-    expect(store.getState().editor.sync).toBe('unknown');
+    expect(syncStatus(store.getState().editor)).toBe('unknown');
   });
 
   it('sends nothing and changes nothing with no output connected', async () => {
@@ -471,6 +471,6 @@ describe('editor store Slot recall', () => {
 
     expect(await done).toBe(false);
     expect(heardBy(pedal)).toEqual(['CC 16 = 10 → Character → Drive', 'PC 0 → Recall Slot A-1']);
-    expect(store.getState().editor.sync).toBe('unknown');
+    expect(syncStatus(store.getState().editor)).toBe('unknown');
   });
 });

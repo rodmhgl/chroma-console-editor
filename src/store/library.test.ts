@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createVirtualPedal, type VirtualPedal } from '../midi/transport/virtual';
+import { syncStatus } from '../model/core';
 import { parsePreset, serializePreset, type Preset } from '../model/schema';
 import { defaultWorkingState } from '../model/state';
 import { createEditorStore } from './editorStore';
@@ -394,9 +395,9 @@ describe('opening a Preset', () => {
     editor.setState((s) => ({ editor: { ...s.editor, sync: 'inSync' } }));
 
     const opening = library.getState().openPreset(shimmer.id);
-    expect(editor.getState().editor.sync).toBe('possiblyStale');
+    expect(syncStatus(editor.getState().editor)).toBe('possiblyStale');
     await opening;
-    expect(editor.getState().editor.sync).toBe('inSync');
+    expect(syncStatus(editor.getState().editor)).toBe('inSync');
   });
 
   it('refuses a Preset no longer in the Library', async () => {
@@ -579,7 +580,7 @@ describe('recalling a Slot', () => {
     expect(library.getState().recallSlot(33)).toBe(true);
 
     expect(editor.getState().editor.working).toEqual(committed);
-    expect(editor.getState().editor.sync).toBe('possiblyStale');
+    expect(syncStatus(editor.getState().editor)).toBe('possiblyStale');
     expect(library.getState().source.presetId).toBe(shimmer.id);
     expect(workingLabel()).toBe('Shimmer Tape');
     expect(virtualPedal.getSnapshot().log.at(-1)?.text).toBe('PC 33 → Recall Slot B-14');
@@ -617,7 +618,7 @@ describe('recalling a Slot', () => {
 
     expect(library.getState().source).toBe(source);
     expect(workingLabel()).toBe('Shimmer Tape •');
-    expect(editor.getState().editor.sync).toBe('unknown');
+    expect(syncStatus(editor.getState().editor)).toBe('unknown');
   });
 });
 

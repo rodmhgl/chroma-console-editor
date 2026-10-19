@@ -19,6 +19,48 @@ export const MODULES = {
 
 export type ModuleId = keyof typeof MODULES;
 
+/** The Modules in their default Module Order, which is also the order of their buttons, A to D. */
+export const MODULE_IDS = Object.keys(MODULES) as ModuleId[];
+
+/** Four Modules can process the signal in 4! orders. */
+const MODULE_ORDER_COUNT = 24;
+
+/**
+ * The Module Order a permutation index stands for. The 24 orders are numbered in dictionary order of the default one,
+ * so 0 is Character → Movement → Diffusion → Texture and 23 is the reverse.
+ */
+export function moduleOrderAt(index: number): ModuleId[] {
+  const remaining = [...MODULE_IDS];
+  const order: ModuleId[] = [];
+  let rest = index;
+  for (let n = remaining.length; n > 0; n--) {
+    const stride = factorial(n - 1);
+    order.push(remaining.splice(Math.floor(rest / stride), 1)[0]!);
+    rest %= stride;
+  }
+  return order;
+}
+
+/** The permutation index of a Module Order; undefined unless it holds each of the four Modules once. */
+export function moduleOrderIndex(order: readonly ModuleId[]): number | undefined {
+  if (order.length !== MODULE_IDS.length || MODULE_IDS.some((m) => !order.includes(m))) return undefined;
+  const remaining = [...MODULE_IDS];
+  return order.reduce((index, module, i) => {
+    const position = remaining.indexOf(module);
+    remaining.splice(position, 1);
+    return index + position * factorial(order.length - 1 - i);
+  }, 0);
+}
+
+function factorial(n: number): number {
+  return n <= 1 ? 1 : n * factorial(n - 1);
+}
+
+/** The Module Order a Working State holds. */
+export function moduleOrderOf(working: Readonly<Record<'moduleOrder', number>>): ModuleId[] {
+  return moduleOrderAt(working.moduleOrder);
+}
+
 /** A control whose meaning changes with its Module's Effect, named by the knob it is on the pedal. */
 export type ControlRole = 'amount' | 'tilt' | 'sensitivity' | 'rate' | 'time' | 'drift';
 
@@ -50,20 +92,25 @@ export type EffectDef = ChoiceDef & {
 export type ParamDef = {
   id: string;
   label: string;
-  cc: number;
+  /** None for a Pedal Step setting, which MIDI can't reach. */
+  cc?: number;
   /**
    * `continuous`: any of 0–127, sent as-is. `effect`: one of a Module's Effects, sent as the midpoint of its range.
    * `choice`: one of a few named settings, such as Engaged or Bypassed, each sent as its own value.
+   * `moduleOrder`: one of the 24 orders of the four Modules, as a permutation index (see `moduleOrderOf`).
    */
-  kind: 'continuous' | 'effect' | 'choice';
+  kind: 'continuous' | 'effect' | 'choice' | 'moduleOrder';
   effects?: readonly EffectDef[];
   choices?: readonly ChoiceDef[];
   /** The Module the control drives: Tilt is Character's, as its red knob shows. Output Level drives the whole pedal. */
   module?: ModuleId;
   /** Which of its Module's Effect's controls this is, when its meaning follows the Effect. */
   role?: ControlRole;
-  /** `fxSetup`: saved in the Preset, but set on the pedal in its FX Setup menu, such as Filter style. */
-  group: 'effect' | 'engaged' | 'primary' | 'secondary' | 'fxSetup';
+  /**
+   * `fxSetup`: saved in the Preset, but set on the pedal in its FX Setup menu, such as Filter style. `pedalStep`: set
+   * only by hand on the pedal, so never sent.
+   */
+  group: 'effect' | 'engaged' | 'primary' | 'secondary' | 'fxSetup' | 'pedalStep';
   scope: 'preset';
   min: number;
   max: number;
@@ -73,8 +120,8 @@ export type ParamDef = {
   /** What turning toward each end of the sweep does, for a control neutral at centre. */
   sides?: readonly [string, string];
   help: string;
-  /** How the setting reaches the pedal; Pedal Step settings arrive with Module Order. */
-  transport: 'cc';
+  /** How the setting reaches the pedal: a CC, or a Pedal Step the user performs and then confirms. */
+  transport: 'cc' | 'pedalStep';
 };
 
 /** Each Effect of a Module takes 22 values of its CC from 0, in order; 110–127 is OFF, which the editor never sends. */
@@ -321,6 +368,18 @@ export const PARAMS = {
     group: 'fxSetup',
     default: 'postFx',
   }),
+  moduleOrder: {
+    id: 'moduleOrder',
+    label: 'Module Order',
+    kind: 'moduleOrder',
+    group: 'pedalStep',
+    scope: 'preset',
+    min: 0,
+    max: MODULE_ORDER_COUNT - 1,
+    default: 0,
+    help: 'The order the four Modules process the signal in. MIDI can’t set it: apply it on the pedal in FX Setup.',
+    transport: 'pedalStep',
+  },
 } as const satisfies Record<string, ParamDef>;
 
 export type ParamId = keyof typeof PARAMS;
@@ -343,8 +402,63 @@ export type ChoiceParamId = {
   [K in ParamId]: (typeof PARAMS)[K]['kind'] extends 'choice' ? K : never;
 }[ParamId];
 
+/** A Preset setting MIDI can't reach, which the user applies on the pedal by a Pedal Step. */
+export type PedalStepParamId = {
+  [K in ParamId]: (typeof PARAMS)[K]['transport'] extends 'pedalStep' ? K : never;
+}[ParamId];
+
+/** A Preset setting sent as a CC. */
+export type CcParamId = Exclude<PresetParamId, PedalStepParamId>;
+
 /** A 0–127 knob. */
-export type LevelParamId = Exclude<PresetParamId, EffectParamId | ChoiceParamId>;
+export type LevelParamId = Exclude<CcParamId, EffectParamId | ChoiceParamId>;
+
+export const PEDAL_STEP_PARAMS = (Object.values(PARAMS) as ParamDef[]).filter((p) => p.transport === 'pedalStep').map((p) => p.id as PedalStepParamId);
+
+/** The pedal's four buttons, left to right, and its two footswitches, as the manual names them. */
+export const PEDAL_CONTROLS = { a: 'A', b: 'B', c: 'C', d: 'D', tap: 'TAP', bypass: 'BYPASS' } as const;
+
+export type PedalControlId = keyof typeof PEDAL_CONTROLS;
+
+/** Each Module's button, which also selects its Effect. The letters are to be confirmed by hardware check 11. */
+export const MODULE_BUTTONS = { character: 'a', movement: 'b', diffusion: 'c', texture: 'd' } as const satisfies Record<ModuleId, PedalControlId>;
+
+/**
+ * One move of a Pedal Step: pressing and releasing (`press`) or holding down (`hold`) one control, or several together
+ * as a combination.
+ */
+export type PedalMove = { action: 'press' | 'hold'; controls: readonly PedalControlId[]; text: string };
+
+/** What the user does by hand on the pedal to apply a setting MIDI can't reach: moves made in sequence. */
+export type PedalStep = { title: string; moves: readonly PedalMove[] };
+
+const controlNames = (controls: readonly PedalControlId[]) => controls.map((c) => PEDAL_CONTROLS[c]).join(' and ');
+
+const enterFxSetup: PedalMove = {
+  action: 'press',
+  controls: ['a', 'd'],
+  text: `Press ${controlNames(['a', 'd'])} together to enter FX Setup. The buttons show the current Module Order, then blink blue.`,
+};
+
+/** The Pedal Step that applies `id`'s value from the Working State `working` (manual §11). */
+export function pedalStep(id: PedalStepParamId, working: Readonly<Record<PedalStepParamId, number>>): PedalStep {
+  switch (id) {
+    case 'moduleOrder': {
+      const order = moduleOrderOf(working);
+      return {
+        title: 'Set the Module Order',
+        moves: [
+          enterFxSetup,
+          ...order.map((module, i): PedalMove => {
+            const button = MODULE_BUTTONS[module];
+            const last = i === order.length - 1 ? ' The pedal leaves FX Setup.' : '';
+            return { action: 'press', controls: [button], text: `Tap ${PEDAL_CONTROLS[button]} (${MODULES[module]}).${last}` };
+          }),
+        ],
+      };
+    }
+  }
+}
 
 /** The Effect ids an Effect selection offers, e.g. 'howl'. */
 export type EffectId<P extends EffectParamId = EffectParamId> = (typeof PARAMS)[P]['effects'][number]['id'];
@@ -373,7 +487,7 @@ export function fxSetupParams(module?: ModuleId): ChoiceParamId[] {
     .map((p) => p.id as ChoiceParamId);
 }
 
-const byCc = new Map<number, ParamDef>(Object.values(PARAMS).map((p) => [p.cc, p]));
+const byCc = new Map<number, ParamDef>((Object.values(PARAMS) as ParamDef[]).flatMap((p) => (p.cc === undefined ? [] : [[p.cc, p]])));
 
 export function paramByCc(cc: number): ParamDef | undefined {
   return byCc.get(cc);
@@ -390,11 +504,12 @@ export function choiceAt(param: ParamDef, value: number): ChoiceDef | undefined 
 }
 
 /**
- * What a control is set to, as the pedal names it: an Effect (or OFF for 110–127) or a choice such as Bypassed;
- * undefined for a plain level.
+ * What a control is set to, as the pedal names it: an Effect (or OFF for 110–127), a choice such as Bypassed, or a
+ * Module Order such as "Character → Movement → Diffusion → Texture"; undefined for a plain level.
  */
 export function settingLabel(param: ParamDef, value: number): string | undefined {
   if (param.kind === 'continuous') return undefined;
+  if (param.kind === 'moduleOrder') return moduleOrderAt(value).map((m) => MODULES[m]).join(' → ');
   return choiceAt(param, value)?.label ?? 'OFF';
 }
 
@@ -404,7 +519,7 @@ export function settingLabel(param: ParamDef, value: number): string | undefined
  */
 export function clampToParam(param: ParamDef, value: number): number {
   const v = Math.min(param.max, Math.max(param.min, Math.round(value)));
-  return param.kind === 'continuous' ? v : choiceAt(param, v)!.value;
+  return param.kind === 'effect' || param.kind === 'choice' ? choiceAt(param, v)!.value : v;
 }
 
 /** The Effect selection of each Module. */

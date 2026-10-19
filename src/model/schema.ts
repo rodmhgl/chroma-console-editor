@@ -1,4 +1,4 @@
-import { PRESET_PARAMS, clampToParam, type PresetParamId } from '../midi/map';
+import { PARAMS, PRESET_PARAMS, clampToParam, type PresetParamId } from '../midi/map';
 import type { WorkingState } from './state';
 
 // The Preset file format (ADR 0002, SPEC.md): Clean's envelope, with tags, and a flat map of raw preset-scoped params.
@@ -23,7 +23,7 @@ function otherPedalError(file: unknown): string | null {
 }
 
 /** Bump with a migration whenever a preset param is added, a param ID is renamed or what a value means changes (ADR 0002). */
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 export type Preset = {
   /** The Preset's identity: survives Rename; New, Save As and Duplicate make a new one. */
@@ -149,7 +149,10 @@ function readPreset(file: unknown): ParseResult {
  * Each step brings a file's params from one `schemaVersion` to the next (ADR 0002): step i upgrades version i + 1.
  * A param a step adds takes its map default without a warning: the file isn't missing it.
  */
-const MIGRATIONS: ((params: Record<string, unknown>) => Record<string, unknown>)[] = [];
+const MIGRATIONS: ((params: Record<string, unknown>) => Record<string, unknown>)[] = [
+  // 2: Module Order, a Pedal Step setting, joins the params.
+  (params) => ({ ...params, moduleOrder: PARAMS.moduleOrder.default }),
+];
 
 /** A file's params brought up to `SCHEMA_VERSION`, one step at a time. */
 function migrateParams(params: Record<string, unknown>, schemaVersion: number): Record<string, unknown> {
