@@ -6,15 +6,16 @@ type PickerProps<Id extends string> = {
   label: string;
   help: string;
   options: readonly (ChoiceDef & { id: Id })[];
-  value: number;
+  /** The value set; undefined when it isn't known, which leaves every option unchecked. */
+  value: number | undefined;
   onSelect(id: Id): void;
   /** Lays the options out side by side rather than stacked. */
   row?: boolean;
 };
 
 /** One of a few named settings, chosen by name; the CC range stays out of sight. */
-function Picker<Id extends string>({ name, label, help, options, value, onSelect, row }: PickerProps<Id>) {
-  const selected = options.find((o) => value >= o.min && value <= o.max);
+export function Picker<Id extends string>({ name, label, help, options, value, onSelect, row }: PickerProps<Id>) {
+  const selected = value === undefined ? undefined : options.find((o) => value >= o.min && value <= o.max);
   return (
     <fieldset className={row ? 'effect-picker effect-picker-row' : 'effect-picker'} title={help}>
       <legend className={row ? 'effect-picker-legend' : 'sr-only'}>{label}</legend>

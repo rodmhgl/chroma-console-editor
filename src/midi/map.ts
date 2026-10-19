@@ -462,56 +462,115 @@ export function slotAddress(program: number): string | undefined {
   return `${'ABCD'[Math.floor(program / SLOTS_PER_BANK)]}-${(program % SLOTS_PER_BANK) + 1}`;
 }
 
-/** A CC's values split into named bands, each given by its highest value: the bands run from 0 up to 127. */
-type ValueBands = readonly (readonly [max: number, label: string])[];
-
-/** What a CC controls, as the MIDI implementation chart (manual §16) names it, and its named values if it has any. */
-type ChartEntry = { name: string; values?: ValueBands };
-
-const halves = (low: string, high: string): ValueBands => [
-  [63, low],
-  [127, high],
-];
-const thirds = (low: string, middle: string, high: string): ValueBands => [
-  [43, low],
-  [87, middle],
-  [127, high],
-];
+/** One button of a Performance Control: the CC it sends, the value it sends, and the range the pedal reads as it. */
+export type PerformanceActionDef = ChoiceDef & { cc: number; help: string };
 
 /**
- * The rest of the MIDI implementation chart: every CC not yet in PARAMS, for describing any message sent (the MIDI
- * Monitor). A CC leaves here when it joins PARAMS.
+ * A Performance Control (manual §16): a momentary MIDI action, never stored in a Preset, part of undo or sent by Send
+ * All. Each of its actions sends one CC value, like pressing a footswitch.
  */
-const MIDI_CHART: Record<number, ChartEntry> = {
-  80: { name: 'Gesture', values: halves('Play', 'Record') },
-  81: { name: 'Gesture → Stop/Erase' },
-  82: { name: 'Capture', values: thirds('Stop/Clear', 'Play', 'Record') },
-  91: { name: 'Pedal', values: halves('Bypassed', 'Engaged') },
-  92: {
-    name: 'Dual Bypass',
-    values: [
-      [31, 'Total Bypass'],
-      [63, 'Dual Bypass'],
-      [127, 'Total Engage'],
+export type PerformanceControlDef = { id: string; label: string; help: string; actions: readonly PerformanceActionDef[] };
+
+/** An action the chart gives a whole 0–127 range: the pedal acts on any value, and the editor sends 127. */
+const anyValue = <Id extends string>(id: Id, label: string, cc: number, help: string) =>
+  ({ id, label, cc, min: 0, max: 127, value: 127, help }) as const;
+
+export const PERFORMANCE_CONTROLS = {
+  capture: {
+    id: 'capture',
+    label: 'Capture',
+    help: 'The sustainer and looper, as the TAP footswitch works it. Capture recordings are never saved in a Preset.',
+    actions: [
+      { id: 'record', label: 'Record', cc: 82, min: 88, max: 127, value: 107, help: 'Starts recording a loop, clearing any before it.' },
+      { id: 'play', label: 'Play', cc: 82, min: 44, max: 87, value: 65, help: 'Stops recording and plays the loop back.' },
+      { id: 'stopClear', label: 'Stop/Clear', cc: 82, min: 0, max: 43, value: 21, help: 'Stops the loop and clears it.' },
     ],
   },
-  93: { name: 'Tap' },
-  94: {
-    name: 'Calibration Level',
-    values: [
-      [31, 'Low'],
-      [63, 'Medium'],
-      [95, 'High'],
-      [127, 'Very High'],
+  gesture: {
+    id: 'gesture',
+    label: 'Gesture',
+    help: 'Recordings of Primary Control knob movements, looped. The pedal saves them in a Slot; the editor’s Presets never hold them.',
+    actions: [
+      { id: 'play', label: 'Play', cc: 80, min: 0, max: 63, value: 0, help: 'Plays the Gesture recordings.' },
+      { id: 'record', label: 'Record', cc: 80, min: 64, max: 127, value: 127, help: 'Starts recording knob movements.' },
+      anyValue('stopErase', 'Stop/Erase', 81, 'Stops and erases the Gesture recordings.'),
     ],
   },
-  95: { name: 'Calibration menu', values: halves('Exit', 'Enter') },
-};
+  tap: {
+    id: 'tap',
+    label: 'Tap',
+    help: 'Taps the tempo, as the TAP footswitch does. Gesture recordings and tempo-synced Effects follow it.',
+    actions: [anyValue('tap', 'Tap', 93, 'One tap. Tap in time to set the tempo.')],
+  },
+  pedal: {
+    id: 'pedal',
+    label: 'Pedal',
+    help: 'Bypasses or engages the pedal, as the BYPASS footswitch does. Whether it follows a Dual Bypass module set is unconfirmed (hardware check 9).',
+    actions: [
+      { id: 'bypass', label: 'Bypass', cc: 91, min: 0, max: 63, value: 0, help: 'Bypasses the pedal.' },
+      { id: 'engage', label: 'Engage', cc: 91, min: 64, max: 127, value: 127, help: 'Engages the pedal.' },
+    ],
+  },
+  dualBypass: {
+    id: 'dualBypass',
+    label: 'Dual Bypass',
+    help: 'For a Preset whose BYPASS footswitch is set in FX Setup to bypass only some Modules.',
+    actions: [
+      { id: 'totalBypass', label: 'Total Bypass', cc: 92, min: 0, max: 31, value: 15, help: 'Bypasses every Module, as double-tapping BYPASS does.' },
+      { id: 'dualBypass', label: 'Dual Bypass', cc: 92, min: 32, max: 63, value: 47, help: 'Bypasses only the Modules set for Dual Bypass.' },
+      { id: 'totalEngage', label: 'Total Engage', cc: 92, min: 64, max: 127, value: 127, help: 'Engages every Module.' },
+    ],
+  },
+  calibrationMenu: {
+    id: 'calibrationMenu',
+    label: 'Calibration menu',
+    help: 'The pedal’s Calibration menu, as holding both footswitches opens it. Play your instrument in it to calibrate automatically.',
+    actions: [
+      { id: 'enter', label: 'Enter', cc: 95, min: 64, max: 127, value: 127, help: 'Opens the Calibration menu; then play to calibrate.' },
+      { id: 'exit', label: 'Exit', cc: 95, min: 0, max: 63, value: 0, help: 'Leaves the Calibration menu.' },
+    ],
+  },
+} as const satisfies Record<string, PerformanceControlDef>;
+
+export type PerformanceControlId = keyof typeof PERFORMANCE_CONTROLS;
+
+/** The action ids a Performance Control offers, e.g. 'stopClear'. */
+export type PerformanceActionId<C extends PerformanceControlId = PerformanceControlId> = (typeof PERFORMANCE_CONTROLS)[C]['actions'][number]['id'];
+
+/** The action `action` of a Performance Control; undefined for one it doesn't offer. */
+export function performanceAction(control: PerformanceControlId, action: string): PerformanceActionDef | undefined {
+  return (PERFORMANCE_CONTROLS[control] as PerformanceControlDef).actions.find((a) => a.id === action);
+}
+
+/** The Global Setting the editor can set (manual §2): the pedal-wide input headroom, applied to every Preset. */
+export const CALIBRATION_LEVEL = {
+  id: 'calibrationLevel',
+  label: 'Calibration Level',
+  cc: 94,
+  help: 'The input headroom for your instrument. The pedal keeps it through power cycles and applies it to every Preset; it is never saved in one.',
+  choices: [
+    { id: 'low', label: 'Low', min: 0, max: 31, value: 15, help: 'Lower-output guitars and basses, instrument-level synths.' },
+    { id: 'medium', label: 'Medium', min: 32, max: 63, value: 47, help: 'Many guitars and basses (humbuckers, stacked pickups), electric piano, some synths.' },
+    { id: 'high', label: 'High', min: 64, max: 95, value: 79, help: 'Hot-output guitars (overwound or active pickups), most line-level instruments.' },
+    { id: 'veryHigh', label: 'Very High', min: 96, max: 127, value: 111, help: 'High-output line-level signals, modular.' },
+  ],
+} as const satisfies { id: string; label: string; cc: number; help: string; choices: readonly ChoiceDef[] };
+
+export type CalibrationLevelId = (typeof CALIBRATION_LEVEL)['choices'][number]['id'];
+
+/** The named values of each CC that isn't a Preset param, by the name the chart gives the command. */
+const COMMANDS_BY_CC = new Map<number, { name: string; values: readonly ChoiceDef[] }>([[CALIBRATION_LEVEL.cc, { name: CALIBRATION_LEVEL.label, values: CALIBRATION_LEVEL.choices }]]);
+for (const control of Object.values(PERFORMANCE_CONTROLS) as PerformanceControlDef[]) {
+  for (const action of control.actions) {
+    const command = COMMANDS_BY_CC.get(action.cc) ?? { name: control.label, values: [] };
+    COMMANDS_BY_CC.set(action.cc, { ...command, values: [...command.values, action] });
+  }
+}
 
 /**
  * What a CC and value do on the pedal, e.g. "Character → Howl" for CC 16 = 76, "Character → Bypassed" for CC 103 = 0,
- * "Filter style → Lowpass" for CC 84 = 21 or "Character → Amount" for a level; undefined for a CC not in the MIDI
- * implementation chart.
+ * "Filter style → Lowpass" for CC 84 = 21, "Character → Amount" for a level or "Capture → Record" for CC 82 = 107;
+ * undefined for a CC not in the MIDI implementation chart. A command with one action, such as Tap, is named alone.
  */
 export function describeCc(cc: number, value: number): string | undefined {
   const param = paramByCc(cc);
@@ -520,8 +579,10 @@ export function describeCc(cc: number, value: number): string | undefined {
     if (param.group === 'fxSetup') return `${param.label} → ${setting}`;
     return param.module ? `${MODULES[param.module]} → ${setting}` : setting;
   }
-  const entry = MIDI_CHART[cc];
-  if (!entry) return undefined;
-  const band = entry.values?.find(([max]) => value <= max);
-  return band ? `${entry.name} → ${band[1]}` : entry.name;
+  const command = COMMANDS_BY_CC.get(cc);
+  if (!command) return undefined;
+  const named = command.values.find((v) => value >= v.min && value <= v.max);
+  // Tap's one action is the command itself; Dual Bypass → Dual Bypass is one of three.
+  const alone = !named || (command.values.length === 1 && named.label === command.name);
+  return alone ? command.name : `${command.name} → ${named.label}`;
 }

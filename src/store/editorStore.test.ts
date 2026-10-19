@@ -126,6 +126,27 @@ describe('editor store sending', () => {
     ]);
   });
 
+  it('sends Performance Controls and Calibration Level at once, every tap heard, with the Working State untouched', () => {
+    vi.useFakeTimers();
+    const pedal = createVirtualPedal();
+    const store = createEditorStore(pedal);
+    const working = store.getState().editor.working;
+
+    store.getState().perform('tap', 'tap');
+    store.getState().perform('tap', 'tap');
+    store.getState().perform('dualBypass', 'totalBypass');
+    store.getState().setCalibrationLevel('veryHigh');
+
+    expect(sentTo(pedal)).toEqual([
+      'CC 93 = 127 → Tap',
+      'CC 93 = 127 → Tap',
+      'CC 92 = 15 → Dual Bypass → Total Bypass',
+      'CC 94 = 111 → Calibration Level → Very High',
+    ]);
+    expect(store.getState().editor.working).toBe(working);
+    expect(store.getState().editor.global.calibrationLevel).toBe('veryHigh');
+  });
+
   it('throttles a drag per parameter, always sending the latest value last', () => {
     vi.useFakeTimers();
     const pedal = createVirtualPedal();
@@ -176,9 +197,9 @@ describe('editor store Raw MIDI', () => {
     store.getState().sendRaw([0xc0, 3]);
 
     expect(heardBy(pedal)).toEqual([
-      'CC 93 = 1 → (not in MIDI map)',
-      'CC 93 = 2 → (not in MIDI map)',
-      'CC 93 = 3 → (not in MIDI map)',
+      'CC 93 = 1 → Tap',
+      'CC 93 = 2 → Tap',
+      'CC 93 = 3 → Tap',
       'PC 3 → (not in MIDI map)',
     ]);
     // Newest first, with the repeated CC folded into one row that shows its latest value.

@@ -5,10 +5,14 @@ import { ConnectionBar, WebMidiNote } from './ConnectionBar';
 import { DataDrawer } from './drawer/DataDrawer';
 import { useLayoutScale } from './layoutScale';
 import { MODULE_IDS, ModuleColumn } from './panels/ModuleColumn';
+import { PerformancePanel } from './panels/PerformancePanel';
 import { SharedControls } from './panels/SharedControls';
 import { VirtualPedalView } from './VirtualPedalView';
 
-/** The editor: the connection bar, then the console of shared controls and Modules, and the Virtual Pedal. */
+/**
+ * The editor: the connection bar, then the console of shared controls and Modules, the Performance Controls and Global
+ * Settings apart from it, and the Virtual Pedal.
+ */
 export function App() {
   const theme = useSettingsStore((s) => s.theme);
   useLayoutScale();
@@ -34,6 +38,7 @@ export function App() {
               ))}
             </div>
           </section>
+          <PerformancePanel />
           <VirtualPedalView pedal={virtualPedal} />
           <footer className="affiliation-notice">
             Unofficial, free and open-source preset editor for the Chroma Console. Not affiliated with or endorsed by

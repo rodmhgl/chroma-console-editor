@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { PARAMS } from '../midi/map';
+import { CALIBRATION_LEVEL, PARAMS, PERFORMANCE_CONTROLS } from '../midi/map';
 import { dispatch, initialEditorState, type EditorAction, type EditorState } from './core';
 
 /** Dispatches each action in turn; the messages are every action's, in order. */
@@ -61,10 +61,49 @@ const CHOICES = [
   ['captureRouting', 83, [['postFx', 0], ['preFx', 127]]],
 ] as const;
 
+/** Every Performance Control's actions and the CC and value the MIDI implementation chart gives each. */
+const PERFORMANCE = [
+  ['capture', 'record', 82, 107],
+  ['capture', 'play', 82, 65],
+  ['capture', 'stopClear', 82, 21],
+  ['gesture', 'play', 80, 0],
+  ['gesture', 'record', 80, 127],
+  ['gesture', 'stopErase', 81, 127],
+  ['tap', 'tap', 93, 127],
+  ['pedal', 'bypass', 91, 0],
+  ['pedal', 'engage', 91, 127],
+  ['dualBypass', 'totalBypass', 92, 15],
+  ['dualBypass', 'dualBypass', 92, 47],
+  ['dualBypass', 'totalEngage', 92, 127],
+  ['calibrationMenu', 'enter', 95, 127],
+  ['calibrationMenu', 'exit', 95, 0],
+] as const;
+
+/** Each Calibration Level, sent as the midpoint of its quarter of CC 94. */
+const CALIBRATION_LEVELS = [
+  ['low', 15],
+  ['medium', 47],
+  ['high', 79],
+  ['veryHigh', 111],
+] as const;
+
 describe('the pedal map', () => {
   it('has a byte test below for every row', () => {
     const tested = [...EFFECTS.map(([id]) => id), ...LEVELS.map(([id]) => id), ...ENGAGED.map(([, id]) => id), ...CHOICES.map(([id]) => id)];
     expect(tested.sort()).toEqual(Object.keys(PARAMS).sort());
+  });
+
+  it('has a byte test below for every Performance Control action and Calibration Level', () => {
+    const actions = Object.values(PERFORMANCE_CONTROLS).flatMap((c) => c.actions.map((a) => `${c.id}.${a.id}`));
+    expect(PERFORMANCE.map(([control, action]) => `${control}.${action}`).sort()).toEqual(actions.sort());
+    expect(CALIBRATION_LEVELS.map(([id]) => id)).toEqual(CALIBRATION_LEVEL.choices.map((c) => c.id));
+  });
+
+  it('keeps Performance Controls and Calibration Level out of the Preset params, so Send All never sends them', () => {
+    const presetCcs = new Set(Object.values(PARAMS).map((p) => p.cc));
+    const ccs = [...PERFORMANCE.map(([, , cc]) => cc), CALIBRATION_LEVEL.cc];
+
+    expect(ccs.filter((cc) => presetCcs.has(cc))).toEqual([]);
   });
 });
 
@@ -192,6 +231,66 @@ describe('selectChoice', () => {
   });
 });
 
+/** An Editor State with some edits made, so an unchanged Working State can't pass for the default. */
+const edited = () =>
+  run(
+    onMidiChannel5(),
+    { type: 'selectEffect', id: 'diffusionEffect', effect: 'reels' },
+    { type: 'setParam', id: 'diffusionAmount', value: 100 },
+    { type: 'setEngaged', module: 'texture', engaged: false },
+  ).state;
+
+describe('perform', () => {
+  it.each(PERFORMANCE)('%s %s sends CC %i = %i, and leaves the Editor State as it was', (control, action, cc, value) => {
+    const before = edited();
+
+    const { state, messages } = dispatch(before, { type: 'perform', control, action } as EditorAction);
+
+    expect(messages).toEqual([[0xb4, cc, value]]);
+    // The same object: no Working State change, nothing for history to record, nothing for Send All to resend.
+    expect(state).toBe(before);
+  });
+
+  it('sends the same message every time, as a footswitch would', () => {
+    const { messages } = run(onMidiChannel5(), { type: 'perform', control: 'tap', action: 'tap' }, { type: 'perform', control: 'tap', action: 'tap' });
+
+    expect(messages).toEqual([
+      [0xb4, 93, 127],
+      [0xb4, 93, 127],
+    ]);
+  });
+
+  it('ignores an action the control doesn’t offer', () => {
+    const before = edited();
+
+    const { state, messages } = dispatch(before, { type: 'perform', control: 'capture', action: 'stopErase' } as EditorAction);
+
+    expect(messages).toEqual([]);
+    expect(state).toBe(before);
+  });
+});
+
+describe('setCalibrationLevel', () => {
+  it.each(CALIBRATION_LEVELS)('%s sends CC 94 = %i and is held in the Global Settings, not the Working State', (level, value) => {
+    const before = edited();
+
+    const { state, messages } = dispatch(before, { type: 'setCalibrationLevel', level });
+
+    expect(messages).toEqual([[0xb4, 94, value]]);
+    expect(state.global).toEqual({ midiChannel: 5, calibrationLevel: level });
+    expect(state.working).toBe(before.working);
+  });
+
+  it('ignores a level the pedal doesn’t have', () => {
+    const before = edited();
+
+    const { state, messages } = dispatch(before, { type: 'setCalibrationLevel', level: 'extreme' } as unknown as EditorAction);
+
+    expect(messages).toEqual([]);
+    expect(state).toBe(before);
+  });
+});
+
 describe('the OFF range of an Effect selection', () => {
   it('is never sent, whatever value any action is given', () => {
     const state = onMidiChannel5();
@@ -216,7 +315,8 @@ describe('the initial Editor State', () => {
   it('sends on MIDI channel 1 from the manual’s baseline: first Effects, all Engaged, Mix 100%, Tilt and Secondary Controls neutral, no Drift, Filter style Tilt, Capture post-FX', () => {
     const state = initialEditorState();
 
-    expect(state.global).toEqual({ midiChannel: 1 });
+    // The editor can't read the pedal's Calibration Level, so it is unknown until set from the editor.
+    expect(state.global).toEqual({ midiChannel: 1, calibrationLevel: null });
     expect(state.working).toEqual({
       characterEffect: 10,
       movementEffect: 10,

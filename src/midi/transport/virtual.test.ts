@@ -44,6 +44,17 @@ describe('Virtual Pedal transport', () => {
     expect(pedal.getSnapshot().state).toMatchObject({ characterAmount: 100, tilt: 20 });
   });
 
+  it('logs Performance Controls and Calibration Level by name, leaving its Preset state alone', () => {
+    const pedal = createVirtualPedal();
+
+    pedal.send([0xb0, 82, 107]);
+    pedal.send([0xb0, 93, 127]);
+    pedal.send([0xb0, 94, 79]);
+
+    expect(logOf(pedal)).toEqual(['CC 82 = 107 → Capture → Record', 'CC 93 = 127 → Tap', 'CC 94 = 79 → Calibration Level → High']);
+    expect(pedal.getSnapshot().state).toEqual(createVirtualPedal().getSnapshot().state);
+  });
+
   it('ignores messages on another MIDI channel', () => {
     const pedal = createVirtualPedal(1);
 
