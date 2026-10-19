@@ -1,8 +1,9 @@
 import { useSyncExternalStore } from 'react';
+import { MODULES, PARAMS, settingLabel, type ParamDef, type PresetParamId } from '../midi/map';
 import type { VirtualPedal } from '../midi/transport/virtual';
 
 export function VirtualPedalView({ pedal }: { pedal: VirtualPedal }) {
-  const { midiChannel, log } = useSyncExternalStore(pedal.subscribe, pedal.getSnapshot);
+  const { state, midiChannel, log } = useSyncExternalStore(pedal.subscribe, pedal.getSnapshot);
 
   return (
     <section className="card virtual-pedal" aria-labelledby="virtual-pedal-heading">
@@ -14,6 +15,16 @@ export function VirtualPedalView({ pedal }: { pedal: VirtualPedal }) {
         <dd>
           <output aria-label="MIDI channel">{midiChannel}</output>
         </dd>
+        {(Object.values(PARAMS) as ParamDef[]).map((param) => {
+          const name = `${MODULES[param.module]} ${param.label}`;
+          const value = state[param.id as PresetParamId];
+          return [
+            <dt key={`${param.id}-name`}>{name}</dt>,
+            <dd key={param.id}>
+              <output aria-label={name}>{settingLabel(param, value) ?? value}</output>
+            </dd>,
+          ];
+        })}
       </dl>
       <h3 className="card-title">Message log</h3>
       <ol className="message-log" role="log" aria-label="Message log">

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { VIRTUAL_PEDAL_PORT } from '../midi/transport/virtual';
+import { VIRTUAL_PEDAL_PORT, createVirtualPedal } from '../midi/transport/virtual';
 import { createEditorStore } from './editorStore';
 
 type FakeOutput = { id: string; name: string; type: 'output'; state: string; send: (b: number[]) => void };
@@ -24,7 +24,7 @@ function fakeWebMidi(outputs: FakeOutput[]) {
 }
 
 async function connectedStore() {
-  const store = createEditorStore();
+  const store = createEditorStore(createVirtualPedal());
   await store.getState().connectWebMidi();
   return store;
 }
@@ -84,11 +84,51 @@ describe('editor store connection', () => {
 
 describe('editor store MIDI channel', () => {
   it('is 1 by default and can be set to any of 1–16', () => {
-    const store = createEditorStore();
-    expect(store.getState().midiChannel).toBe(1);
+    const store = createEditorStore(createVirtualPedal());
+    expect(store.getState().editor.global.midiChannel).toBe(1);
 
     store.getState().setMidiChannel(16);
 
-    expect(store.getState().midiChannel).toBe(16);
+    expect(store.getState().editor.global.midiChannel).toBe(16);
+  });
+});
+
+describe('editor store sending', () => {
+  afterEach(() => vi.useRealTimers());
+
+  const sentTo = (pedal: ReturnType<typeof createVirtualPedal>) => pedal.getSnapshot().log.map((e) => e.text);
+
+  it('sends an Effect choice to the selected output at once', () => {
+    const pedal = createVirtualPedal();
+    const store = createEditorStore(pedal);
+
+    store.getState().selectEffect('characterEffect', 'howl');
+
+    expect(store.getState().editor.working.characterEffect).toBe(76);
+    expect(sentTo(pedal)).toEqual(['CC 16 = 76 → Character → Howl']);
+  });
+
+  it('throttles a drag per parameter, always sending the latest value last', () => {
+    vi.useFakeTimers();
+    const pedal = createVirtualPedal();
+    const store = createEditorStore(pedal);
+
+    for (const value of [70, 71, 72]) store.getState().setParam('characterAmount', value);
+    store.getState().setParam('tilt', 30);
+    expect(sentTo(pedal)).toEqual(['CC 65 = 70 → Character → Amount', 'CC 64 = 30 → Character → Tilt']);
+
+    vi.runAllTimers();
+    expect(sentTo(pedal).at(-1)).toBe('CC 65 = 72 → Character → Amount');
+    expect(store.getState().editor.working.characterAmount).toBe(72);
+  });
+
+  it('sends to a Web MIDI output once it is selected', async () => {
+    const usb = output('usb', PEDAL_NAME);
+    fakeWebMidi([usb]);
+    const store = await connectedStore();
+
+    store.getState().selectEffect('characterEffect', 'fuzz');
+
+    expect(usb.send).toHaveBeenCalledWith([0xb0, 16, 54]);
   });
 });

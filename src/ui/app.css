@@ -13,6 +13,8 @@
   --ink: #1d1b17;
   --accent: oklch(0.6 0.11 195);
   --warning: oklch(0.55 0.16 30);
+  /* Each Module's colour, as its knobs are on the pedal. */
+  --module-character: oklch(0.55 0.17 25);
 
   --font-sans: 'Archivo Variable', system-ui, sans-serif;
   --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
@@ -48,6 +50,7 @@
   --ink: #fff2e8;
   --accent: #77bc44;
   --warning: #ff6a3d;
+  --module-character: oklch(0.68 0.16 25);
   --disc-hi: #5d6163;
   --disc-inset: rgba(255, 255, 255, 0.12);
   --shadow-knob: 0 6px 14px rgba(0, 0, 0, 0.45);
@@ -123,17 +126,9 @@ button:disabled {
 }
 
 .console {
-  min-height: 240px;
   display: grid;
-  place-items: center;
-  border: 1px dashed var(--border-soft);
-  border-radius: 10px;
-}
-
-.console-empty {
-  margin: 0;
-  font: 500 12px var(--font-mono);
-  color: var(--muted);
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
 }
 
 .card {
@@ -277,6 +272,187 @@ button:disabled {
   margin: 0;
   font: 500 11px var(--font-mono);
   color: var(--warning);
+}
+
+/* ── Modules ────────────────────────────────────────────────────────── */
+
+.module-character {
+  --module: var(--module-character);
+}
+
+.module-card {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  border-top: 4px solid var(--module);
+}
+
+.module-title {
+  color: var(--ink);
+}
+
+.module-knobs {
+  display: flex;
+  justify-content: space-around;
+  gap: 16px;
+}
+
+/* An Effect picker: one segment per Effect. */
+.effect-picker {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+
+.effect-picker-options {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 7px;
+  background: var(--paper);
+}
+
+.effect-picker label {
+  position: relative;
+  cursor: pointer;
+  text-align: center;
+  padding: 8px 0;
+  border-radius: 5px;
+  font: 600 12px var(--font-mono);
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.effect-picker label.is-active {
+  background: var(--module);
+  color: var(--card);
+}
+
+/* Invisible but covering its label, so the radio itself is what a click lands on. */
+.effect-picker-input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.effect-picker label:has(input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ── Knob ───────────────────────────────────────────────────────────── */
+
+.knob {
+  --knob-size: 92px;
+  --knob-ring: 5px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.knob-dial {
+  position: relative;
+  flex: none;
+  width: var(--knob-size);
+  height: var(--knob-size);
+  padding: var(--knob-ring);
+  border-radius: 50%;
+  background: conic-gradient(
+    from 225deg,
+    var(--module, var(--ink)) 0deg var(--knob-deg),
+    var(--rule-light) var(--knob-deg) 270deg,
+    transparent 270deg
+  );
+  cursor: ns-resize;
+  touch-action: none;
+}
+
+.knob-dial:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.knob-disc {
+  display: block;
+  position: relative;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 30%, var(--disc-hi), var(--track) 75%);
+  box-shadow: var(--shadow-knob), inset 0 1px 0 var(--disc-inset);
+  transform: rotate(var(--knob-angle));
+}
+
+.knob-pointer {
+  position: absolute;
+  left: 50%;
+  top: 7px;
+  width: 3px;
+  height: 20px;
+  margin-left: -1.5px;
+  border-radius: 2px;
+  background: var(--ink);
+}
+
+/* The ends of a bipolar knob's sweep, below the dial. */
+.knob-side {
+  position: absolute;
+  bottom: -2px;
+  font: 600 9px var(--font-mono);
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.knob-side-start {
+  right: 82%;
+}
+
+.knob-side-end {
+  left: 82%;
+}
+
+/* Noon, for bipolar and detented knobs. */
+.knob-noon {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  width: 2px;
+  height: var(--knob-ring);
+  margin-left: -1px;
+  background: var(--ink);
+  z-index: 1;
+}
+
+.knob-text {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.knob-label {
+  font: 700 11px var(--font-sans);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  text-align: center;
+}
+
+.knob-value {
+  font: 500 12px var(--font-mono);
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.knob-raw {
+  font-size: 10px;
 }
 
 /* ── Virtual Pedal ──────────────────────────────────────────────────── */

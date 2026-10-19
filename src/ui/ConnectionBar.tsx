@@ -11,7 +11,8 @@ export const MIDI_CHANNEL_HINT =
 
 /** The top bar: output, MIDI channel, connection indicator and the Data drawer button. */
 export function ConnectionBar() {
-  const { outputs, outputId, midiChannel, setOutput, setMidiChannel, connectWebMidi } = useEditorStore();
+  const { outputs, outputId, editor, setOutput, setMidiChannel, connectWebMidi } = useEditorStore();
+  const { midiChannel } = editor.global;
   const drawerOpen = useLayoutStore((s) => s.drawerOpen);
   const toggleDrawer = useLayoutStore((s) => s.toggleDrawer);
   // Subscribing to `outputs` above re-renders this on every hot-plug, which re-reads the connection state.

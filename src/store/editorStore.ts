@@ -1,20 +1,32 @@
 import { create } from 'zustand';
-import { DEFAULT_MIDI_CHANNEL } from '../midi/map';
+import { decode } from '../midi/decode';
+import type { MidiMessage } from '../midi/encode';
+import { paramByCc, type EffectId, type EffectParamId, type PresetParamId } from '../midi/map';
+import { createThrottle } from '../midi/throttle';
 import { pedalOutputToSelect } from '../midi/transport/ports';
 import type { MidiPort } from '../midi/transport/types';
-import { VIRTUAL_PEDAL_PORT, createVirtualPedal } from '../midi/transport/virtual';
+import { VIRTUAL_PEDAL_PORT, createVirtualPedal, type VirtualPedal } from '../midi/transport/virtual';
 import { requestWebMidi, type WebMidi } from '../midi/transport/webmidi';
+import { dispatch, initialEditorState, type EditorAction, type EditorState } from '../model/core';
+
+/** Continuous controls send at most one message per this many ms each, so a drag can't flood the pedal. */
+const CONTINUOUS_SEND_MS = 5;
 
 export type WebMidiStatus = 'pending' | 'available' | 'unavailable';
 
 type EditorStore = {
+  /** Every change to it goes through the editor core's `dispatch`. */
+  editor: EditorState;
+  /** Sets a Working State control and sends it. */
+  setParam(id: PresetParamId, value: number): void;
+  /** Chooses a Module's Effect by name and sends it. */
+  selectEffect<P extends EffectParamId>(id: P, effect: EffectId<P>): void;
   webMidi: WebMidi | null;
   webMidiStatus: WebMidiStatus;
   /** Virtual Pedal first, then every connected Web MIDI output. */
   outputs: MidiPort[];
   outputId: string;
-  /** The MIDI channel the editor sends on, 1–16. It must match the pedal's own, set in its Global Settings. */
-  midiChannel: number;
+  /** Sets the MIDI channel the editor sends on, 1–16. It must match the pedal's own, set in its Global Settings. */
   setMidiChannel(midiChannel: number): void;
   setOutput(id: string): void;
   isOutputConnected(): boolean;
@@ -22,12 +34,32 @@ type EditorStore = {
   connectWebMidi(): Promise<void>;
 };
 
-/** The editor's connection to the pedal: its outputs, the selected one and the MIDI channel. */
-export function createEditorStore() {
+/** The Editor State and the connection to the pedal, sending to `virtualPedal` whenever it is the selected output. */
+export function createEditorStore(virtualPedal: VirtualPedal) {
   /** Shared so React StrictMode's double effect asks the browser only once. */
   let webMidiRequest: Promise<void> | undefined;
 
   return create<EditorStore>((set, get) => {
+    const sendToOutput = (bytes: MidiMessage) => {
+      const { outputId, webMidi } = get();
+      if (outputId === VIRTUAL_PEDAL_PORT.id) virtualPedal.send(bytes);
+      else webMidi?.send(bytes);
+    };
+    const continuousThrottle = createThrottle(CONTINUOUS_SEND_MS, sendToOutput);
+    /** Paces continuous controls through the throttle, like a knob; everything else goes straight out. */
+    const sendPaced = (bytes: MidiMessage) => {
+      const msg = decode(bytes);
+      const param = msg.kind === 'cc' ? paramByCc(msg.cc) : undefined;
+      if (param?.kind === 'continuous') continuousThrottle.send(param.id, bytes);
+      else sendToOutput(bytes);
+    };
+    /** Applies `action` with the editor core and sends what it says to. */
+    const apply = (action: EditorAction) => {
+      const { state, messages } = dispatch(get().editor, action);
+      set({ editor: state });
+      messages.forEach(sendPaced);
+    };
+
     const requestAndListen = async () => {
       const webMidi = await requestWebMidi();
       if (!webMidi) {
@@ -48,13 +80,19 @@ export function createEditorStore() {
     };
 
     return {
+      editor: initialEditorState(),
+      setParam(id, value) {
+        apply({ type: 'setParam', id, value });
+      },
+      selectEffect(id, effect) {
+        apply({ type: 'selectEffect', id, effect });
+      },
       webMidi: null,
       webMidiStatus: 'pending',
       outputs: [VIRTUAL_PEDAL_PORT],
       outputId: VIRTUAL_PEDAL_PORT.id,
-      midiChannel: DEFAULT_MIDI_CHANNEL,
       setMidiChannel(midiChannel) {
-        set({ midiChannel });
+        apply({ type: 'setMidiChannel', midiChannel });
       },
       setOutput(id) {
         get().webMidi?.selectOutput(id === VIRTUAL_PEDAL_PORT.id ? null : id);
@@ -74,4 +112,4 @@ export function createEditorStore() {
 
 export const virtualPedal = createVirtualPedal();
 
-export const useEditorStore = createEditorStore();
+export const useEditorStore = createEditorStore(virtualPedal);

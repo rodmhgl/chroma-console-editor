@@ -11,10 +11,37 @@ describe('Virtual Pedal transport', () => {
   it('listens on MIDI channel 1 by default and logs what it hears', () => {
     const pedal = createVirtualPedal();
 
-    pedal.send([0xb0, 16, 76]);
+    pedal.send([0xb0, 20, 76]);
     pedal.send([0xc0, 3]);
 
-    expect(logOf(pedal)).toEqual(['CC 16 = 76 → (not in MIDI map)', 'PC 3 → (not in MIDI map)']);
+    expect(logOf(pedal)).toEqual(['CC 20 = 76 → (not in MIDI map)', 'PC 3 → (not in MIDI map)']);
+  });
+
+  it('decodes a Character Effect selection by its CC range, and OFF', () => {
+    const pedal = createVirtualPedal();
+
+    pedal.send([0xb0, 16, 76]);
+    expect(pedal.getSnapshot().state.characterEffect).toBe(76);
+    pedal.send([0xb0, 16, 0]);
+    pedal.send([0xb0, 16, 109]);
+    pedal.send([0xb0, 16, 110]);
+
+    expect(logOf(pedal)).toEqual([
+      'CC 16 = 76 → Character → Howl',
+      'CC 16 = 0 → Character → Drive',
+      'CC 16 = 109 → Character → Swell',
+      'CC 16 = 110 → Character → OFF',
+    ]);
+  });
+
+  it('decodes Amount and Tilt into its state', () => {
+    const pedal = createVirtualPedal();
+
+    pedal.send([0xb0, 65, 100]);
+    pedal.send([0xb0, 64, 20]);
+
+    expect(logOf(pedal)).toEqual(['CC 65 = 100 → Character → Amount', 'CC 64 = 20 → Character → Tilt']);
+    expect(pedal.getSnapshot().state).toMatchObject({ characterAmount: 100, tilt: 20 });
   });
 
   it('ignores messages on another MIDI channel', () => {
@@ -23,6 +50,7 @@ describe('Virtual Pedal transport', () => {
     pedal.send([0xb4, 16, 76]);
 
     expect(logOf(pedal)).toEqual(['CC 16 = 76 on MIDI channel 5 → ignored (pedal listens on MIDI channel 1)']);
+    expect(pedal.getSnapshot().state.characterEffect).toBe(10);
   });
 
   it('logs MIDI clock as unknown', () => {

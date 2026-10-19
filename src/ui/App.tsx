@@ -4,9 +4,10 @@ import { useSettingsStore } from '../store/settingsStore';
 import { ConnectionBar, WebMidiNote } from './ConnectionBar';
 import { DataDrawer } from './drawer/DataDrawer';
 import { useLayoutScale } from './layoutScale';
+import { CharacterModule } from './panels/CharacterModule';
 import { VirtualPedalView } from './VirtualPedalView';
 
-/** The editor: the connection bar, then the console the Modules will fill, and the Virtual Pedal. */
+/** The editor: the connection bar, then the console of Modules, and the Virtual Pedal. */
 export function App() {
   const theme = useSettingsStore((s) => s.theme);
   useLayoutScale();
@@ -25,7 +26,7 @@ export function App() {
         <main className="main-column">
           <WebMidiNote />
           <section className="console" aria-label="Editor">
-            <p className="console-empty">The pedal’s controls will appear here.</p>
+            <CharacterModule />
           </section>
           <VirtualPedalView pedal={virtualPedal} />
           <footer className="affiliation-notice">
