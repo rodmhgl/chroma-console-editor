@@ -19,6 +19,7 @@ import type { MidiPort } from '../midi/transport/types';
 import { VIRTUAL_PEDAL_PORT, createVirtualPedal, type VirtualPedal } from '../midi/transport/virtual';
 import { requestWebMidi, type WebMidi } from '../midi/transport/webmidi';
 import { dispatch, encodeParam, initialEditorState, sendAllOrder, type EditorAction, type EditorState } from '../model/core';
+import type { WorkingState } from '../model/state';
 import { logSent, type SentMessage } from './monitor';
 
 /** Continuous controls send at most one message per this many ms each, so a drag can't flood the pedal. */
@@ -58,6 +59,11 @@ type EditorStore = {
    * Resolves false if it was abandoned part-way: the output changed, a send failed, or another Send All began.
    */
   sendAll(): Promise<boolean>;
+  /**
+   * Makes `working` the Working State (an opened Preset, or New), then Sends All when an output is connected. Resolves
+   * like `sendAll`, or false with no output.
+   */
+  loadWorking(working: WorkingState): Promise<boolean>;
   sendingAll: boolean;
   /** An output is connected and no Send All is running. */
   canSendAll(): boolean;
@@ -188,6 +194,12 @@ export function createEditorStore(virtualPedal: VirtualPedal) {
       },
       redo() {
         apply({ type: 'redo' });
+      },
+      loadWorking(working) {
+        apply({ type: 'loadWorking', working });
+        if (get().isOutputConnected()) return get().sendAll();
+        abandonSendAll();
+        return Promise.resolve(false);
       },
       async sendAll() {
         const run = ++sendAllRun;

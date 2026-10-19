@@ -18,7 +18,9 @@ export type SyncEvent =
   /** The editor now sends on another MIDI channel, which the pedal may not listen on. */
   | 'midiChannel'
   /** One Working State setting sent live. */
-  | 'edit';
+  | 'edit'
+  /** A whole new Working State (an opened Preset, or New): the pedal holds the old one until Send All finishes. */
+  | 'load';
 
 export const SYNC_STATUS_LABELS: Record<SyncStatus, string> = {
   inSync: 'In Sync',
@@ -40,6 +42,7 @@ export function nextSyncStatus(status: SyncStatus, event: SyncEvent): SyncStatus
     case 'sendFailed':
     case 'rawMidi':
     case 'midiChannel':
+    case 'load':
       // Unknown already trusts nothing.
       return status === 'unknown' ? status : 'possiblyStale';
     case 'edit':

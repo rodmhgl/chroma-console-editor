@@ -330,6 +330,9 @@ export type PresetParamId = {
   [K in ParamId]: (typeof PARAMS)[K]['scope'] extends 'preset' ? K : never;
 }[ParamId];
 
+/** Every param saved in a Preset, in `PARAMS` order. */
+export const PRESET_PARAMS: readonly ParamDef[] = (Object.values(PARAMS) as ParamDef[]).filter((p) => p.scope === 'preset');
+
 /** A Module's Effect selection (CC 16–19). */
 export type EffectParamId = {
   [K in ParamId]: (typeof PARAMS)[K]['kind'] extends 'effect' ? K : never;

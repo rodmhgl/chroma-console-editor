@@ -547,3 +547,45 @@ describe('Sync Status', () => {
     expect(dispatch(inSync(), { type: 'setMidiChannel', midiChannel: 5 }).state.sync).toBe('inSync');
   });
 });
+
+describe('loadWorking', () => {
+  const working = {
+    ...initialEditorState().working,
+    characterEffect: 76,
+    tilt: 20,
+    diffusionEngaged: 0,
+    filterStyle: 107,
+  };
+  const inSync = () => run(onMidiChannel5(), { type: 'outputConnected' }, { type: 'sendAllFinished' }).state;
+
+  it('makes it the Working State and sends nothing: the store follows it with Send All', () => {
+    const { state, messages } = dispatch(inSync(), { type: 'loadWorking', working });
+
+    expect(state.working).toEqual(working);
+    expect(messages).toEqual([]);
+  });
+
+  it('is Possibly Stale until Send All finishes, and stays Unknown with no output', () => {
+    const loaded = dispatch(inSync(), { type: 'loadWorking', working }).state;
+    expect(loaded.sync).toBe('possiblyStale');
+    expect(dispatch(loaded, { type: 'sendAllFinished' }).state.sync).toBe('inSync');
+
+    expect(dispatch(onMidiChannel5(), { type: 'loadWorking', working }).state.sync).toBe('unknown');
+  });
+
+  it('clamps what it is given, so an Effect selection never lands in OFF', () => {
+    const { state } = dispatch(onMidiChannel5(), {
+      type: 'loadWorking',
+      working: { ...working, characterEffect: 120, mix: 400 },
+    });
+
+    expect(state.working).toMatchObject({ characterEffect: 98, mix: 127 });
+  });
+
+  it('clears the undo history, whose steps belong to the old Working State', () => {
+    const edited = dispatch(onMidiChannel5(), { type: 'setParam', id: 'tilt', value: 30 }).state;
+    const loaded = dispatch(edited, { type: 'loadWorking', working }).state;
+
+    expect(dispatch(loaded, { type: 'undo' })).toEqual({ state: loaded, messages: [] });
+  });
+});
