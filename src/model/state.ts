@@ -21,7 +21,7 @@ export function defaultGlobalSettings(): GlobalSettings {
   return { midiChannel: DEFAULT_MIDI_CHANNEL, calibrationLevel: null };
 }
 
-/** What the Virtual Pedal is sounding. Only Preset settings so far; Performance Controls will join them, as in Clean. */
+/** What the Virtual Pedal is sounding: the Preset settings. Performance Controls and Calibration Level are only logged. */
 export type PedalState = WorkingState;
 
 export const defaultPedalState = defaultWorkingState;

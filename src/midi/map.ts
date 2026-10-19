@@ -491,8 +491,8 @@ export const PERFORMANCE_CONTROLS = {
     label: 'Gesture',
     help: 'Recordings of Primary Control knob movements, looped. The pedal saves them in a Slot; the editor’s Presets never hold them.',
     actions: [
-      { id: 'record', label: 'Record', cc: 80, min: 64, max: 127, value: 127, help: 'Starts recording knob movements.' },
       { id: 'play', label: 'Play', cc: 80, min: 0, max: 63, value: 0, help: 'Plays the Gesture recordings.' },
+      { id: 'record', label: 'Record', cc: 80, min: 64, max: 127, value: 127, help: 'Starts recording knob movements.' },
       anyValue('stopErase', 'Stop/Erase', 81, 'Stops and erases the Gesture recordings.'),
     ],
   },
@@ -505,7 +505,7 @@ export const PERFORMANCE_CONTROLS = {
   pedal: {
     id: 'pedal',
     label: 'Pedal',
-    help: 'Bypasses or engages the whole pedal, as the BYPASS footswitch does.',
+    help: 'Bypasses or engages the pedal, as the BYPASS footswitch does. Whether it follows a Dual Bypass module set is unconfirmed (hardware check 9).',
     actions: [
       { id: 'bypass', label: 'Bypass', cc: 91, min: 0, max: 63, value: 0, help: 'Bypasses the pedal.' },
       { id: 'engage', label: 'Engage', cc: 91, min: 64, max: 127, value: 127, help: 'Engages the pedal.' },
@@ -536,6 +536,11 @@ export type PerformanceControlId = keyof typeof PERFORMANCE_CONTROLS;
 
 /** The action ids a Performance Control offers, e.g. 'stopClear'. */
 export type PerformanceActionId<C extends PerformanceControlId = PerformanceControlId> = (typeof PERFORMANCE_CONTROLS)[C]['actions'][number]['id'];
+
+/** The action `action` of a Performance Control; undefined for one it doesn't offer. */
+export function performanceAction(control: PerformanceControlId, action: string): PerformanceActionDef | undefined {
+  return (PERFORMANCE_CONTROLS[control] as PerformanceControlDef).actions.find((a) => a.id === action);
+}
 
 /** The Global Setting the editor can set (manual §2): the pedal-wide input headroom, applied to every Preset. */
 export const CALIBRATION_LEVEL = {

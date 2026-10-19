@@ -2,19 +2,18 @@ import { controlChange, type MidiMessage } from '../midi/encode';
 import {
   CALIBRATION_LEVEL,
   PARAMS,
-  PERFORMANCE_CONTROLS,
   clampToParam,
   ENGAGED_PARAMS,
   isEngaged,
+  performanceAction,
+  type CalibrationLevelId,
   type ChoiceId,
   type ChoiceParamId,
   type EffectId,
   type EffectParamId,
   type ModuleId,
-  type CalibrationLevelId,
   type ParamDef,
   type PerformanceActionId,
-  type PerformanceControlDef,
   type PerformanceControlId,
   type PresetParamId,
 } from '../midi/map';
@@ -68,8 +67,7 @@ export function dispatch(state: EditorState, action: EditorAction): CoreResult {
     case 'setMidiChannel':
       return { state: { ...state, global: { ...state.global, midiChannel: action.midiChannel } }, messages: [] };
     case 'perform': {
-      const control: PerformanceControlDef = PERFORMANCE_CONTROLS[action.control];
-      const performed = control.actions.find((a) => a.id === action.action);
+      const performed = performanceAction(action.control, action.action);
       if (!performed) return { state, messages: [] };
       return { state, messages: [controlChange(state.global.midiChannel, performed.cc, performed.value)] };
     }
