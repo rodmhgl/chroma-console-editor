@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react';
-import { MODULES, PARAMS, settingLabel, type ParamDef, type PresetParamId } from '../midi/map';
+import { MODULES, PARAMS, effectAt, settingLabel, type ParamDef, type PresetParamId } from '../midi/map';
 import type { VirtualPedal } from '../midi/transport/virtual';
 
 export function VirtualPedalView({ pedal }: { pedal: VirtualPedal }) {
@@ -19,9 +19,12 @@ export function VirtualPedalView({ pedal }: { pedal: VirtualPedal }) {
         {(Object.values(PARAMS) as ParamDef[]).filter((p) => p.transport === 'cc').map((param) => {
           const name = param.module ? `${MODULES[param.module]} ${param.label}` : param.label;
           const value = state[param.id as PresetParamId];
+          const colour = effectAt(param, value)?.colour;
           return [
             <dt key={`${param.id}-name`}>{name}</dt>,
             <dd key={param.id}>
+              {/* The Effect Colour the pedal lights its Module button. */}
+              {colour && <span className={`effect-dot effect-${colour}`} aria-hidden="true" />}
               <output aria-label={name}>{settingLabel(param, value) ?? value}</output>
             </dd>,
           ];

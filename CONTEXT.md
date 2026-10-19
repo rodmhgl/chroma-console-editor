@@ -16,6 +16,13 @@ _Avoid_: Block, stage, slot
 One of the five selectable algorithms inside a Module (e.g. Howl in Character, Reels in Diffusion).
 _Avoid_: Algorithm, mode, type
 
+**Effect Colour**:
+The colour — red, yellow, green, blue or purple — the pedal lights a Module button to show its selected Effect; fixed by the Effect's place in its Module (e.g. Drive, Doubler, Cascade and Filter are all red).
+_Avoid_: Effect LED, Module Colour
+
+**Module Colour**:
+The fixed colour of a Module's knobs: Character red, Movement yellow, Diffusion green, Texture blue. Distinct from Effect Colour, which changes with the selected Effect.
+
 **Engaged / Bypassed**:
 Whether a Module is processing; a Bypassed Module keeps its selected Effect.
 _Avoid_: Off, on, enabled, active

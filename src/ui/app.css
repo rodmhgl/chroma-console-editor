@@ -21,6 +21,15 @@
   --on-module-movement: var(--ink);
   --module-diffusion: oklch(0.55 0.13 150);
   --module-texture: oklch(0.52 0.13 250);
+  /*
+   * Each Effect's colour, as the pedal lights its Module button. Red, yellow, green and blue are the Module hues, so a
+   * red Effect and a red knob are the same red; these resolve per theme.
+   */
+  --effect-red: var(--module-character);
+  --effect-yellow: var(--module-movement);
+  --effect-green: var(--module-diffusion);
+  --effect-blue: var(--module-texture);
+  --effect-purple: oklch(0.52 0.15 305);
 
   --font-sans: 'Archivo Variable', system-ui, sans-serif;
   --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
@@ -61,6 +70,7 @@
   --on-module-movement: var(--card);
   --module-diffusion: oklch(0.72 0.14 150);
   --module-texture: oklch(0.7 0.12 250);
+  --effect-purple: oklch(0.7 0.14 305);
   --disc-hi: #5d6163;
   --disc-inset: rgba(255, 255, 255, 0.12);
   --shadow-knob: 0 6px 14px rgba(0, 0, 0, 0.45);
@@ -347,6 +357,32 @@ button:disabled {
   --module: var(--module-texture);
 }
 
+/* Effect Colour, which follows the selected Effect; text on yellow takes the dark ink, as on Movement's colour. */
+.effect-red {
+  --effect: var(--effect-red);
+  --on-effect: var(--card);
+}
+
+.effect-yellow {
+  --effect: var(--effect-yellow);
+  --on-effect: var(--on-module-movement);
+}
+
+.effect-green {
+  --effect: var(--effect-green);
+  --on-effect: var(--card);
+}
+
+.effect-blue {
+  --effect: var(--effect-blue);
+  --on-effect: var(--card);
+}
+
+.effect-purple {
+  --effect: var(--effect-purple);
+  --on-effect: var(--card);
+}
+
 .module-card {
   display: flex;
   flex-direction: column;
@@ -390,11 +426,14 @@ button:disabled {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: var(--module);
-  box-shadow: 0 0 6px var(--module);
+  background: var(--effect, var(--module));
+  box-shadow: 0 0 6px var(--effect, var(--module));
 }
 
-/* A Bypassed Module keeps its Effect and settings, still editable, but greys out like an unlit button. */
+/*
+ * A Bypassed Module keeps its Effect and settings, still editable, but greys out like an unlit button. Its Effect
+ * picker only dims, keeping the Effect Colours.
+ */
 .module-card.is-bypassed {
   border-top-style: dashed;
   border-top-color: var(--muted);
@@ -412,6 +451,10 @@ button:disabled {
 .module-card.is-bypassed > :not(.module-header),
 .module-card.is-bypassed .module-title {
   opacity: 0.5;
+}
+
+.module-card.is-bypassed > :not(.module-header, .effect-picker-colours),
+.module-card.is-bypassed .module-title {
   filter: grayscale(1);
 }
 
@@ -736,10 +779,27 @@ button:disabled {
   color: var(--muted);
 }
 
-/* Outside a Module, such as Capture Routing, the choice takes the ink colour. */
+/* An Effect takes its Effect Colour; another choice its Module Colour, or outside a Module, such as Capture Routing, the ink colour. */
 .effect-picker label.is-active {
-  background: var(--module, var(--ink));
-  color: var(--on-module);
+  background: var(--effect, var(--module, var(--ink)));
+  color: var(--on-effect, var(--on-module));
+}
+
+/* An unselected Effect's colour, so each shows which colour the pedal lights it. */
+.effect-swatch {
+  position: absolute;
+  top: 50%;
+  left: 10px;
+  width: 8px;
+  height: 8px;
+  margin-top: -4px;
+  border-radius: 50%;
+  background: var(--effect);
+  pointer-events: none;
+}
+
+.effect-picker label.is-active .effect-swatch {
+  display: none;
 }
 
 /* Invisible but covering its label, so the radio itself is what a click lands on. */
@@ -904,6 +964,15 @@ button:disabled {
 
 .pedal-state dd {
   margin: 0;
+}
+
+.effect-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: var(--effect);
 }
 
 .message-log {

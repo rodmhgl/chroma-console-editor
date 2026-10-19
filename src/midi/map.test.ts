@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { defaultWorkingState } from '../model/state';
-import { readControl } from './map';
+import { EFFECT_COLOURS, PARAMS, readControl, type EffectParamId } from './map';
 
 const working = (changes: Partial<ReturnType<typeof defaultWorkingState>> = {}) => ({ ...defaultWorkingState(), ...changes });
 
@@ -41,5 +41,18 @@ describe('readControl', () => {
     expect(readControl('mix', working()).readout).toBe('100%');
     expect(readControl('movementDrift', working()).readout).toBe('0%');
     expect(readControl('textureAmount', working({ textureAmount: 64 })).readout).toBe('50%');
+  });
+});
+
+describe('Effect Colour', () => {
+  it('lights each Effect in the colour of its place in its Module, as the pedal does', () => {
+    const colours = (id: EffectParamId) =>
+      Object.fromEntries(PARAMS[id].effects.map((e) => [e.id, e.colour]));
+
+    expect(EFFECT_COLOURS).toEqual(['red', 'yellow', 'green', 'blue', 'purple']);
+    expect(colours('characterEffect')).toEqual({ drive: 'red', sweeten: 'yellow', fuzz: 'green', howl: 'blue', swell: 'purple' });
+    expect(colours('movementEffect')).toEqual({ doubler: 'red', vibrato: 'yellow', phaser: 'green', tremolo: 'blue', pitch: 'purple' });
+    expect(colours('diffusionEffect')).toEqual({ cascade: 'red', reels: 'yellow', space: 'green', collage: 'blue', reverse: 'purple' });
+    expect(colours('textureEffect')).toEqual({ filter: 'red', squash: 'yellow', cassette: 'green', broken: 'blue', interference: 'purple' });
   });
 });

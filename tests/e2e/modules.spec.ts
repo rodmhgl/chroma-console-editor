@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 
 // The four Modules and the shared controls: every edit reaches the Virtual Pedal as it happens, and each control reads
 // in the pedal's own terms for the Effect selected.
@@ -171,6 +171,43 @@ test('bypassing a Module keeps its Effect and greys it out; Engaging it again li
   await expect(lastLogged(page)).toHaveText('CC 104 = 127 → Movement → Engaged');
   await expect(engaged).toBeChecked();
   await expect(movement).not.toHaveClass(/is-bypassed/);
+});
+
+test('the selected Effect and the Engaged light take its Effect Colour; the card keeps its Module Colour', async ({ page }) => {
+  await page.goto('./');
+  const character = page.getByRole('region', { name: 'Character' });
+  const movement = page.getByRole('region', { name: 'Movement' });
+  const style = (locator: Locator, property: 'backgroundColor' | 'borderTopColor' | 'filter') =>
+    locator.evaluate((el, p) => getComputedStyle(el)[p], property);
+  const selected = (module: Locator) => module.getByRole('group', { name: 'Effect' }).locator('label.is-active');
+  const light = (module: Locator) => module.locator('.engaged-switch-light');
+
+  // Doubler is red on the pedal, like Drive, though Movement's knobs are yellow.
+  const red = await style(selected(character), 'backgroundColor');
+  expect(await style(selected(movement), 'backgroundColor')).toBe(red);
+  expect(await style(light(movement), 'backgroundColor')).toBe(red);
+  const border = await style(movement, 'borderTopColor');
+  expect(border).not.toBe(red);
+
+  await movement.getByRole('radio', { name: 'Vibrato' }).check();
+  const yellow = await style(selected(movement), 'backgroundColor');
+  expect(yellow).not.toBe(red);
+  expect(await style(light(movement), 'backgroundColor')).toBe(yellow);
+  expect(await style(movement, 'borderTopColor')).toBe(border);
+
+  // Bypassed, the light goes out but the Effect picker keeps its colour, dimmed rather than greyed.
+  await movement.getByRole('switch', { name: 'Engaged' }).click();
+  await expect(movement).toHaveClass(/is-bypassed/);
+  expect(await style(light(movement), 'backgroundColor')).not.toBe(yellow);
+  expect(await style(movement.getByRole('group', { name: 'Effect' }), 'filter')).toBe('none');
+  expect(await style(selected(movement), 'backgroundColor')).toBe(yellow);
+
+  // Only the Effect picker keeps its colour: Texture's Filter style greys out with the rest of the card.
+  const texture = page.getByRole('region', { name: 'Texture' });
+  await texture.getByRole('switch', { name: 'Engaged' }).click();
+  await expect(texture).toHaveClass(/is-bypassed/);
+  expect(await style(texture.getByRole('group', { name: 'Effect' }), 'filter')).toBe('none');
+  expect(await style(texture.getByRole('group', { name: 'Filter style' }), 'filter')).toBe('grayscale(1)');
 });
 
 test('Filter style sits with Texture and Capture Routing with the shared controls', async ({ page }) => {
