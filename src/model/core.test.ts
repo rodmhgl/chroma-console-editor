@@ -347,3 +347,111 @@ describe('the initial Editor State', () => {
     });
   });
 });
+
+describe('undo/redo', () => {
+  it('steps back one edit at a time and forward again, re-sending each restored value', () => {
+    const edited = run(
+      onMidiChannel5(),
+      { type: 'setParam', id: 'tilt', value: 30 },
+      { type: 'selectEffect', id: 'diffusionEffect', effect: 'reels' },
+      { type: 'setEngaged', module: 'texture', engaged: false },
+      { type: 'selectChoice', id: 'filterStyle', choice: 'highpass' },
+    ).state;
+
+    const undone = run(edited, { type: 'undo' }, { type: 'undo' }, { type: 'undo' }, { type: 'undo' });
+    expect(undone.messages).toEqual([
+      [0xb4, 84, 65],
+      [0xb4, 106, 127],
+      [0xb4, 18, 10],
+      [0xb4, 64, 64],
+    ]);
+    expect(undone.state.working).toEqual(initialEditorState().working);
+
+    const redone = run(undone.state, { type: 'redo' }, { type: 'redo' });
+    expect(redone.messages).toEqual([
+      [0xb4, 64, 30],
+      [0xb4, 18, 32],
+    ]);
+    expect(redone.state.working).toMatchObject({ tilt: 30, diffusionEffect: 32, textureEngaged: 127 });
+  });
+
+  it('records a drag as one step', () => {
+    const { state } = run(
+      onMidiChannel5(),
+      { type: 'beginDrag' },
+      ...[70, 80, 90].map((value) => ({ type: 'setParam', id: 'mix', value }) as const),
+      { type: 'endDrag' },
+    );
+
+    const undone = dispatch(state, { type: 'undo' });
+    expect(undone.messages).toEqual([[0xb4, 70, 127]]);
+    expect(dispatch(undone.state, { type: 'undo' }).messages).toEqual([]);
+    expect(dispatch(undone.state, { type: 'redo' }).messages).toEqual([[0xb4, 70, 90]]);
+  });
+
+  it('says Bypassed again when it changes a Bypassed Module’s Effect', () => {
+    const { state } = run(
+      onMidiChannel5(),
+      { type: 'setEngaged', module: 'movement', engaged: false },
+      { type: 'selectEffect', id: 'movementEffect', effect: 'phaser' },
+    );
+
+    const undone = dispatch(state, { type: 'undo' });
+    expect(undone.messages).toEqual([
+      [0xb4, 17, 10],
+      [0xb4, 104, 0],
+    ]);
+    expect(dispatch(undone.state, { type: 'redo' }).messages).toEqual([
+      [0xb4, 17, 54],
+      [0xb4, 104, 0],
+    ]);
+  });
+
+  it('records nothing for the MIDI channel or an edit that changes nothing', () => {
+    const { state } = run(
+      onMidiChannel5(),
+      { type: 'setParam', id: 'tilt', value: 64 },
+      { type: 'selectEffect', id: 'characterEffect', effect: 'drive' },
+      { type: 'selectEffect', id: 'characterEffect', effect: 'pitch' } as EditorAction,
+      { type: 'setMidiChannel', midiChannel: 9 },
+    );
+
+    expect(dispatch(state, { type: 'undo' })).toEqual({ state, messages: [] });
+    expect(state.global.midiChannel).toBe(9);
+  });
+
+  it('never records a Performance Control or the Calibration Level, nor lets one clear the redo steps', () => {
+    const others: EditorAction[] = [
+      ...PERFORMANCE.map(([control, action]) => ({ type: 'perform', control, action }) as EditorAction),
+      ...CALIBRATION_LEVELS.map(([level]) => ({ type: 'setCalibrationLevel', level }) as const),
+    ];
+    const { state } = run(
+      onMidiChannel5(),
+      { type: 'setParam', id: 'tilt', value: 30 },
+      { type: 'setParam', id: 'rate', value: 90 },
+      { type: 'undo' },
+      ...others,
+    );
+
+    const undone = dispatch(state, { type: 'undo' });
+    expect(undone.messages).toEqual([[0xb4, 64, 64]]);
+    expect(dispatch(undone.state, { type: 'undo' }).messages).toEqual([]);
+    expect(run(undone.state, { type: 'redo' }, { type: 'redo' }).messages).toEqual([
+      [0xb4, 64, 30],
+      [0xb4, 66, 90],
+    ]);
+    expect(undone.state.global.calibrationLevel).toBe('veryHigh');
+  });
+
+  it('re-sends on the MIDI channel the editor sends on now', () => {
+    const { state } = run(onMidiChannel5(), { type: 'setParam', id: 'time', value: 0 }, { type: 'setMidiChannel', midiChannel: 2 });
+
+    expect(dispatch(state, { type: 'undo' }).messages).toEqual([[0xb1, 68, 64]]);
+  });
+
+  it('does nothing with nothing to undo or redo', () => {
+    const state = onMidiChannel5();
+    expect(dispatch(state, { type: 'undo' })).toEqual({ state, messages: [] });
+    expect(dispatch(state, { type: 'redo' })).toEqual({ state, messages: [] });
+  });
+});

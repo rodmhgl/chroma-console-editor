@@ -7,6 +7,7 @@ import { useLayoutScale } from './layoutScale';
 import { MODULE_IDS, ModuleColumn } from './panels/ModuleColumn';
 import { PerformancePanel } from './panels/PerformancePanel';
 import { SharedControls } from './panels/SharedControls';
+import { useShortcuts } from './useShortcuts';
 import { VirtualPedalView } from './VirtualPedalView';
 
 /**
@@ -16,6 +17,7 @@ import { VirtualPedalView } from './VirtualPedalView';
 export function App() {
   const theme = useSettingsStore((s) => s.theme);
   useLayoutScale();
+  useShortcuts();
   // app.css themes the page from this.
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
