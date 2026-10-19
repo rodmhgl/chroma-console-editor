@@ -18,11 +18,17 @@ import { pedalOutputToSelect } from '../midi/transport/ports';
 import type { MidiPort } from '../midi/transport/types';
 import { VIRTUAL_PEDAL_PORT, createVirtualPedal, type VirtualPedal } from '../midi/transport/virtual';
 import { requestWebMidi, type WebMidi } from '../midi/transport/webmidi';
-import { dispatch, initialEditorState, type EditorAction, type EditorState } from '../model/core';
+import { dispatch, encodeParam, initialEditorState, sendAllOrder, type EditorAction, type EditorState } from '../model/core';
 import { logSent, type SentMessage } from './monitor';
 
 /** Continuous controls send at most one message per this many ms each, so a drag can't flood the pedal. */
 const CONTINUOUS_SEND_MS = 5;
+
+/** The gap between Send All messages, in ms. Hardware check 3 will find the smallest the pedal never drops. */
+export const SEND_GAP_RANGE = { min: 0, max: 50 };
+export const DEFAULT_SEND_GAP_MS = 5;
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export type WebMidiStatus = 'pending' | 'available' | 'unavailable';
 
@@ -47,6 +53,17 @@ type EditorStore = {
   /** Steps back through Working State edits, re-sending what each restores so the pedal matches the screen. */
   undo(): void;
   redo(): void;
+  /**
+   * Sends every MIDI-reachable setting of the Working State, `sendGapMs` apart, then makes the Sync Status In Sync.
+   * Resolves false if it was abandoned part-way: the output changed, a send failed, or another Send All began.
+   */
+  sendAll(): Promise<boolean>;
+  sendingAll: boolean;
+  /** An output is connected and no Send All is running. */
+  canSendAll(): boolean;
+  /** The gap between Send All messages, in ms (Settings). */
+  sendGapMs: number;
+  setSendGapMs(ms: number): void;
   webMidi: WebMidi | null;
   webMidiStatus: WebMidiStatus;
   /** Virtual Pedal first, then every connected Web MIDI output. */
@@ -74,13 +91,23 @@ export function createEditorStore(virtualPedal: VirtualPedal) {
   let webMidiRequest: Promise<void> | undefined;
   let nextSentId = 1;
 
+  /** Bumped to abandon a Send All in progress (see `sendAll`). */
+  let sendAllRun = 0;
+
   return create<EditorStore>((set, get) => {
-    /** Every message the editor sends goes out here, and so into the MIDI Monitor. */
-    const sendToOutput = (bytes: MidiMessage) => {
+    /** Every message the editor sends goes out here, and so into the MIDI Monitor. False if it didn't go out. */
+    const sendToOutput = (bytes: MidiMessage): boolean => {
       const { outputId, webMidi } = get();
-      if (outputId === VIRTUAL_PEDAL_PORT.id) virtualPedal.send(bytes);
-      else webMidi?.send(bytes);
+      try {
+        if (outputId === VIRTUAL_PEDAL_PORT.id) virtualPedal.send(bytes);
+        else webMidi?.send(bytes);
+      } catch {
+        abandonSendAll();
+        apply({ type: 'sendFailed' });
+        return false;
+      }
       set((s) => ({ sent: logSent(s.sent, { id: nextSentId++, at: Date.now() - startedAt, bytes }) }));
+      return true;
     };
     const continuousThrottle = createThrottle(CONTINUOUS_SEND_MS, sendToOutput);
     /** Paces continuous controls through the throttle, like a knob; everything else goes straight out. */
@@ -96,6 +123,15 @@ export function createEditorStore(virtualPedal: VirtualPedal) {
       set({ editor: state });
       messages.forEach(sendPaced);
     };
+    const abandonSendAll = () => {
+      sendAllRun++;
+      set({ sendingAll: false });
+    };
+    /** The selected output has just been chosen, plugged in or unplugged. */
+    const onOutputChange = () => {
+      abandonSendAll();
+      apply({ type: get().isOutputConnected() ? 'outputConnected' : 'outputLost' });
+    };
 
     const requestAndListen = async () => {
       const webMidi = await requestWebMidi();
@@ -104,12 +140,16 @@ export function createEditorStore(virtualPedal: VirtualPedal) {
         return;
       }
       // A new outputs array on every port change also re-renders the connection indicator.
+      // Web MIDI has already changed by the time it reports a port change, so compare the outputs list instead.
+      const selectedListed = () => get().outputs.some((p) => p.id === get().outputId);
       const refresh = () => {
         const before = get().outputs;
+        const wasListed = selectedListed();
         const now = webMidi.listOutputs();
         set({ outputs: [VIRTUAL_PEDAL_PORT, ...now] });
         const pedal = pedalOutputToSelect({ before, now, selectedId: get().outputId });
         if (pedal) get().setOutput(pedal);
+        else if (selectedListed() !== wasListed) onOutputChange();
       };
       webMidi.onPortsChange(refresh);
       set({ webMidi, webMidiStatus: 'available' });
@@ -117,7 +157,8 @@ export function createEditorStore(virtualPedal: VirtualPedal) {
     };
 
     return {
-      editor: initialEditorState(),
+      // The Virtual Pedal is selected from the start.
+      editor: dispatch(initialEditorState(), { type: 'outputConnected' }).state,
       setParam(id, value) {
         apply({ type: 'setParam', id, value });
       },
@@ -148,12 +189,35 @@ export function createEditorStore(virtualPedal: VirtualPedal) {
       redo() {
         apply({ type: 'redo' });
       },
+      async sendAll() {
+        const run = ++sendAllRun;
+        set({ sendingAll: true });
+        for (const [i, id] of sendAllOrder().entries()) {
+          if (i > 0) await sleep(get().sendGapMs);
+          if (run !== sendAllRun) return false;
+          // Read the latest state each step, so an edit made part-way isn't overwritten with an older value.
+          if (!sendToOutput(encodeParam(get().editor, id))) return false;
+        }
+        set({ sendingAll: false });
+        apply({ type: 'sendAllFinished' });
+        return true;
+      },
+      sendingAll: false,
+      canSendAll() {
+        return get().isOutputConnected() && !get().sendingAll;
+      },
+      sendGapMs: DEFAULT_SEND_GAP_MS,
+      setSendGapMs(sendGapMs) {
+        set({ sendGapMs });
+      },
       webMidi: null,
       webMidiStatus: 'pending',
       outputs: [VIRTUAL_PEDAL_PORT],
       outputId: VIRTUAL_PEDAL_PORT.id,
       sent: [],
-      sendRaw: sendToOutput,
+      sendRaw(bytes) {
+        if (sendToOutput(bytes)) apply({ type: 'rawSent' });
+      },
       clearSent() {
         set({ sent: [] });
       },
@@ -163,6 +227,7 @@ export function createEditorStore(virtualPedal: VirtualPedal) {
       setOutput(id) {
         get().webMidi?.selectOutput(id === VIRTUAL_PEDAL_PORT.id ? null : id);
         set({ outputId: id });
+        onOutputChange();
       },
       isOutputConnected() {
         const { outputId, webMidi } = get();

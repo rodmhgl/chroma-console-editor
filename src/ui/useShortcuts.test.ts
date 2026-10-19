@@ -36,10 +36,24 @@ describe('shortcutFor', () => {
     expect(shortcutFor(key('z', { metaKey: true, shiftKey: true, repeat: true }), MAC)).toEqual({ type: 'redo' });
   });
 
+  it('is Send All for ⌘E on a Mac and Ctrl+E elsewhere', () => {
+    expect(shortcutFor(key('e', { metaKey: true }), MAC)).toEqual({ type: 'sendAll' });
+    expect(shortcutFor(key('E', { ctrlKey: true }), PC)).toEqual({ type: 'sendAll' });
+  });
+
+  it('doesn’t repeat Send All while held, or take ⇧', () => {
+    expect(shortcutFor(key('e', { ctrlKey: true, repeat: true }), PC)).toBeNull();
+    expect(shortcutFor(key('e', { ctrlKey: true, shiftKey: true }), PC)).toBeNull();
+  });
+
   it('ignores other keys and modifiers', () => {
     expect(shortcutFor(key('z'), PC)).toBeNull();
+    expect(shortcutFor(key('e'), PC)).toBeNull();
     expect(shortcutFor(key('s', { ctrlKey: true }), PC)).toBeNull();
     expect(shortcutFor(key('z', { ctrlKey: true, altKey: true }), PC)).toBeNull();
+    expect(shortcutFor(key('e', { ctrlKey: true, altKey: true }), PC)).toBeNull();
     expect(shortcutFor(key('z', { ctrlKey: true, metaKey: true }), PC)).toBeNull();
+    expect(shortcutFor(key('e', { metaKey: true }), PC)).toBeNull();
+    expect(shortcutFor(key('e', { ctrlKey: true }), MAC)).toBeNull();
   });
 });

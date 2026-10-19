@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { VIRTUAL_PEDAL_PORT, createVirtualPedal } from '../midi/transport/virtual';
+import { encodeSendAll } from '../model/core';
 import { canRedo, canUndo } from '../model/history';
 import { createEditorStore } from './editorStore';
 
@@ -231,6 +232,147 @@ describe('editor store Raw MIDI', () => {
     store.getState().clearSent();
 
     expect(store.getState().sent).toEqual([]);
+  });
+
+  it('makes the Sync Status Possibly Stale, since the message may have changed anything', async () => {
+    const store = createEditorStore(createVirtualPedal());
+    await store.getState().sendAll();
+
+    store.getState().sendRaw([0xb0, 64, 0]);
+
+    expect(store.getState().editor.sync).toBe('possiblyStale');
+  });
+});
+
+describe('editor store Send All', () => {
+  afterEach(() => vi.useRealTimers());
+
+  const heardBy = (pedal: ReturnType<typeof createVirtualPedal>) => pedal.getSnapshot().log.map((e) => e.text);
+
+  it('starts Possibly Stale, with the Virtual Pedal selected', () => {
+    expect(createEditorStore(createVirtualPedal()).getState().editor.sync).toBe('possiblyStale');
+  });
+
+  it('sends every setting with the Send All gap between messages, then is In Sync', async () => {
+    vi.useFakeTimers();
+    const pedal = createVirtualPedal();
+    const store = createEditorStore(pedal);
+    store.getState().setSendGapMs(10);
+    store.getState().selectEffect('characterEffect', 'howl');
+
+    const done = store.getState().sendAll();
+    expect(store.getState().sendingAll).toBe(true);
+    expect(heardBy(pedal)).toEqual(['CC 16 = 76 → Character → Howl', 'CC 16 = 76 → Character → Howl']);
+    await vi.advanceTimersByTimeAsync(9);
+    expect(heardBy(pedal)).toHaveLength(2);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(heardBy(pedal).at(-1)).toBe('CC 17 = 10 → Movement → Doubler');
+    expect(store.getState().editor.sync).toBe('possiblyStale');
+
+    await vi.runAllTimersAsync();
+    expect(await done).toBe(true);
+    expect(heardBy(pedal)).toHaveLength(27);
+    expect(heardBy(pedal).at(-1)).toBe('CC 106 = 127 → Texture → Engaged');
+    expect(store.getState().sendingAll).toBe(false);
+    expect(store.getState().editor.sync).toBe('inSync');
+  });
+
+  it('sends exactly the editor core’s Send All bytes, in order', async () => {
+    const usb = output('usb', PEDAL_NAME);
+    fakeWebMidi([usb]);
+    const store = await connectedStore();
+    store.getState().setSendGapMs(0);
+    store.getState().selectChoice('filterStyle', 'highpass');
+    vi.mocked(usb.send).mockClear();
+
+    await store.getState().sendAll();
+
+    expect(vi.mocked(usb.send).mock.calls.map(([bytes]) => bytes)).toEqual(encodeSendAll(store.getState().editor));
+  });
+
+  it('sends a setting edited part-way at its new value', async () => {
+    vi.useFakeTimers();
+    const pedal = createVirtualPedal();
+    const store = createEditorStore(pedal);
+
+    const done = store.getState().sendAll();
+    store.getState().setEngaged('texture', false);
+    await vi.runAllTimersAsync();
+    await done;
+
+    expect(heardBy(pedal).at(-1)).toBe('CC 106 = 0 → Texture → Bypassed');
+  });
+
+  it('is abandoned when the output changes part-way, leaving the Sync Status Possibly Stale', async () => {
+    vi.useFakeTimers();
+    fakeWebMidi([output('din', 'USB MIDI Interface')]);
+    const pedal = createVirtualPedal();
+    const store = createEditorStore(pedal);
+    await store.getState().connectWebMidi();
+
+    const done = store.getState().sendAll();
+    store.getState().setOutput('din');
+    await vi.runAllTimersAsync();
+
+    expect(await done).toBe(false);
+    expect(heardBy(pedal)).toHaveLength(1);
+    expect(store.getState().sendingAll).toBe(false);
+    expect(store.getState().editor.sync).toBe('possiblyStale');
+  });
+});
+
+describe('editor store Sync Status', () => {
+  it('is Unknown when the selected output is unplugged, and Possibly Stale when it is back', async () => {
+    const pedal = output('usb', PEDAL_NAME);
+    const midi = fakeWebMidi([pedal]);
+    const store = await connectedStore();
+    await store.getState().sendAll();
+    expect(store.getState().editor.sync).toBe('inSync');
+
+    midi.unplug(pedal);
+    expect(store.getState().editor.sync).toBe('unknown');
+
+    pedal.state = 'connected';
+    midi.plug(pedal);
+    expect(store.getState().editor.sync).toBe('possiblyStale');
+  });
+
+  it('is Possibly Stale when another output is selected', async () => {
+    const din = output('din', 'USB MIDI Interface');
+    fakeWebMidi([din]);
+    const store = await connectedStore();
+    await store.getState().sendAll();
+
+    store.getState().setOutput('din');
+    expect(store.getState().editor.sync).toBe('possiblyStale');
+  });
+
+  it('is Possibly Stale after a send fails', async () => {
+    const usb = output('usb', PEDAL_NAME);
+    fakeWebMidi([usb]);
+    const store = await connectedStore();
+    await store.getState().sendAll();
+
+    vi.mocked(usb.send).mockImplementation(() => {
+      throw new Error('port closed');
+    });
+    store.getState().selectEffect('characterEffect', 'fuzz');
+
+    expect(store.getState().editor.sync).toBe('possiblyStale');
+    expect(store.getState().sent.map((m) => m.bytes)).not.toContainEqual([0xb0, 16, 54]);
+  });
+
+  it('stays Possibly Stale when a send fails during Send All, which stops there', async () => {
+    const usb = output('usb', PEDAL_NAME);
+    fakeWebMidi([usb]);
+    const store = await connectedStore();
+    vi.mocked(usb.send).mockImplementation(() => {
+      throw new Error('port closed');
+    });
+
+    expect(await store.getState().sendAll()).toBe(false);
+    expect(usb.send).toHaveBeenCalledTimes(1);
+    expect(store.getState().editor.sync).toBe('possiblyStale');
   });
 });
 

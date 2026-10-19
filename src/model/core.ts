@@ -19,16 +19,18 @@ import {
 } from '../midi/map';
 import * as history from './history';
 import { defaultGlobalSettings, defaultWorkingState, type GlobalSettings, type WorkingState } from './state';
+import { INITIAL_SYNC_STATUS, nextSyncStatus, type SyncEvent, type SyncStatus } from './sync';
 
 // The editor core (SPEC.md, Implementation Decisions): every change to the Editor State is one pure transition, which
 // also says what MIDI to send. The store only applies it and does the sending.
 
-/** Everything the editor believes about and controls on the pedal. Sync Status and Slot Map arrive later. */
+/** Everything the editor believes about and controls on the pedal. Slot Map arrives later. */
 export type EditorState = {
   working: WorkingState;
   global: GlobalSettings;
   /** Undo/redo for Working State edits. */
   history: history.History;
+  sync: SyncStatus;
 };
 
 export type EditorAction =
@@ -40,7 +42,7 @@ export type EditorAction =
   | { type: 'setEngaged'; module: ModuleId; engaged: boolean }
   /** A setting such as Filter style by name: sends that choice's value. */
   | { type: 'selectChoice'; id: ChoiceParamId; choice: ChoiceId }
-  /** The MIDI channel the editor sends on. Sends nothing, and isn't undoable. */
+  /** The MIDI channel the editor sends on. Sends nothing and isn't undoable; a change makes the Sync Status Possibly Stale. */
   | { type: 'setMidiChannel'; midiChannel: number }
   /** One button of a Performance Control, such as Capture → Record: sends it and changes nothing in the Editor State. */
   | { type: 'perform'; control: PerformanceControlId; action: PerformanceActionId }
@@ -51,12 +53,22 @@ export type EditorAction =
   | { type: 'endDrag' }
   /** Restores the Working State controls the last step changed, re-sending them so the pedal matches the screen. */
   | { type: 'undo' }
-  | { type: 'redo' };
+  | { type: 'redo' }
+  /** The selected output has become reachable. */
+  | { type: 'outputConnected' }
+  /** The selected output has gone away. */
+  | { type: 'outputLost' }
+  /** Every message of `encodeSendAll` went out. */
+  | { type: 'sendAllFinished' }
+  /** A message the editor sent didn't reach the output. */
+  | { type: 'sendFailed' }
+  /** A message typed in Raw MIDI went out, which may have changed anything. */
+  | { type: 'rawSent' };
 
 export type CoreResult = { state: EditorState; messages: MidiMessage[] };
 
 export function initialEditorState(): EditorState {
-  return { working: defaultWorkingState(), global: defaultGlobalSettings(), history: history.EMPTY_HISTORY };
+  return { working: defaultWorkingState(), global: defaultGlobalSettings(), history: history.EMPTY_HISTORY, sync: INITIAL_SYNC_STATUS };
 }
 
 /** The Editor State after `action`, and the MIDI to send for it. */
@@ -73,8 +85,11 @@ export function dispatch(state: EditorState, action: EditorAction): CoreResult {
       return selectChoice(state, ENGAGED_PARAMS[action.module], action.engaged ? 'engaged' : 'bypassed');
     case 'selectChoice':
       return selectChoice(state, action.id, action.choice);
-    case 'setMidiChannel':
-      return { state: { ...state, global: { ...state.global, midiChannel: action.midiChannel } }, messages: [] };
+    case 'setMidiChannel': {
+      if (action.midiChannel === state.global.midiChannel) return { state, messages: [] };
+      const next = { ...state, global: { ...state.global, midiChannel: action.midiChannel } };
+      return { state: sync(next, 'midiChannel'), messages: [] };
+    }
     case 'perform': {
       const performed = performanceAction(action.control, action.action);
       if (!performed) return { state, messages: [] };
@@ -105,7 +120,21 @@ export function dispatch(state: EditorState, action: EditorAction): CoreResult {
       }
       return { state: next, messages };
     }
+    case 'outputConnected':
+      return { state: sync(state, 'connect'), messages: [] };
+    case 'outputLost':
+      return { state: sync(state, 'disconnect'), messages: [] };
+    case 'sendAllFinished':
+      return { state: sync(state, 'sendAll'), messages: [] };
+    case 'sendFailed':
+      return { state: sync(state, 'sendFailed'), messages: [] };
+    case 'rawSent':
+      return { state: sync(state, 'rawMidi'), messages: [] };
   }
+}
+
+function sync(state: EditorState, event: SyncEvent): EditorState {
+  return { ...state, sync: nextSyncStatus(state.sync, event) };
 }
 
 function selectChoice(state: EditorState, id: ChoiceParamId, choiceId: string): CoreResult {
@@ -117,11 +146,14 @@ function selectChoice(state: EditorState, id: ChoiceParamId, choiceId: string): 
 function setParam(state: EditorState, id: PresetParamId, value: number, undoable = true): CoreResult {
   const param: ParamDef = PARAMS[id];
   const v = clampToParam(param, value);
-  const next = {
-    ...state,
-    working: { ...state.working, [id]: v },
-    history: undoable ? history.record(state.history, id, state.working[id], v) : state.history,
-  };
+  const next = sync(
+    {
+      ...state,
+      working: { ...state.working, [id]: v },
+      history: undoable ? history.record(state.history, id, state.working[id], v) : state.history,
+    },
+    'edit',
+  );
   const messages = [encodeParam(next, id)];
   // Whether the pedal engages a Bypassed Module when its Effect changes is unknown (hardware check 7), so the editor
   // says Bypassed again rather than risk the pedal and the editor disagreeing.
@@ -132,6 +164,20 @@ function setParam(state: EditorState, id: PresetParamId, value: number, undoable
 }
 
 /** One Working State control as the CC that sets it on the pedal. */
-function encodeParam(state: EditorState, id: PresetParamId): MidiMessage {
+export function encodeParam(state: EditorState, id: PresetParamId): MidiMessage {
   return controlChange(state.global.midiChannel, PARAMS[id].cc, state.working[id]);
+}
+
+/** Send All goes group by group in this order, each group in pedal map order (SPEC.md, Implementation Decisions). */
+const SEND_ALL_GROUPS: ParamDef['group'][] = ['effect', 'fxSetup', 'primary', 'secondary', 'engaged'];
+
+/** Every Working State setting in the order Send All transmits it. */
+export function sendAllOrder(): PresetParamId[] {
+  const preset: ParamDef[] = Object.values(PARAMS).filter((p) => p.scope === 'preset');
+  return SEND_ALL_GROUPS.flatMap((group) => preset.filter((p) => p.group === group).map((p) => p.id as PresetParamId));
+}
+
+/** The full Working State as MIDI, in Send All order. */
+export function encodeSendAll(state: EditorState): MidiMessage[] {
+  return sendAllOrder().map((id) => encodeParam(state, id));
 }

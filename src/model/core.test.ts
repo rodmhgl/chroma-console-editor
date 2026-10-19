@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { CALIBRATION_LEVEL, PARAMS, PERFORMANCE_CONTROLS } from '../midi/map';
-import { dispatch, initialEditorState, type EditorAction, type EditorState } from './core';
+import { dispatch, encodeSendAll, initialEditorState, type EditorAction, type EditorState } from './core';
 
 /** Dispatches each action in turn; the messages are every action's, in order. */
 function run(state: EditorState, ...actions: EditorAction[]) {
@@ -453,5 +453,97 @@ describe('undo/redo', () => {
     const state = onMidiChannel5();
     expect(dispatch(state, { type: 'undo' })).toEqual({ state, messages: [] });
     expect(dispatch(state, { type: 'redo' })).toEqual({ state, messages: [] });
+  });
+});
+
+describe('Send All', () => {
+  it('sends every Working State setting: Effects, then Filter style and Capture Routing, Primary Controls, Secondary Controls, and Engaged/Bypassed last', () => {
+    const state = run(
+      onMidiChannel5(),
+      { type: 'selectEffect', id: 'characterEffect', effect: 'howl' },
+      { type: 'selectEffect', id: 'textureEffect', effect: 'broken' },
+      { type: 'selectChoice', id: 'filterStyle', choice: 'highpass' },
+      { type: 'selectChoice', id: 'captureRouting', choice: 'preFx' },
+      { type: 'setParam', id: 'tilt', value: 10 },
+      { type: 'setParam', id: 'diffusionDrift', value: 90 },
+      { type: 'setEngaged', module: 'movement', engaged: false },
+    ).state;
+
+    expect(encodeSendAll(state)).toEqual([
+      [0xb4, 16, 76],
+      [0xb4, 17, 10],
+      [0xb4, 18, 10],
+      [0xb4, 19, 76],
+      [0xb4, 84, 107],
+      [0xb4, 83, 127],
+      [0xb4, 64, 10],
+      [0xb4, 65, 64],
+      [0xb4, 66, 64],
+      [0xb4, 67, 64],
+      [0xb4, 68, 64],
+      [0xb4, 69, 64],
+      [0xb4, 70, 127],
+      [0xb4, 71, 64],
+      [0xb4, 72, 64],
+      [0xb4, 73, 64],
+      [0xb4, 74, 0],
+      [0xb4, 75, 64],
+      [0xb4, 76, 90],
+      [0xb4, 77, 64],
+      [0xb4, 78, 64],
+      [0xb4, 79, 64],
+      [0xb4, 103, 127],
+      [0xb4, 104, 0],
+      [0xb4, 105, 127],
+      [0xb4, 106, 127],
+    ]);
+  });
+});
+
+describe('Sync Status', () => {
+  const inSync = () => run(onMidiChannel5(), { type: 'outputConnected' }, { type: 'sendAllFinished' }).state;
+
+  it('is Unknown with no output, and Possibly Stale once one connects', () => {
+    const state = onMidiChannel5();
+    expect(state.sync).toBe('unknown');
+
+    const connected = dispatch(state, { type: 'outputConnected' });
+    expect(connected.state.sync).toBe('possiblyStale');
+    expect(connected.messages).toEqual([]);
+  });
+
+  it('is In Sync after Send All, and maintained by live sends', () => {
+    const state = run(
+      inSync(),
+      { type: 'setParam', id: 'tilt', value: 3 },
+      { type: 'selectEffect', id: 'movementEffect', effect: 'pitch' },
+      { type: 'setEngaged', module: 'texture', engaged: false },
+      { type: 'selectChoice', id: 'filterStyle', choice: 'lowpass' },
+    ).state;
+
+    expect(state.sync).toBe('inSync');
+  });
+
+  it('never earns trust from a live send it didn’t already have', () => {
+    for (const start of [onMidiChannel5(), dispatch(onMidiChannel5(), { type: 'outputConnected' }).state]) {
+      expect(dispatch(start, { type: 'setParam', id: 'tilt', value: 3 }).state.sync).toBe(start.sync);
+    }
+  });
+
+  it('is Possibly Stale on reconnecting, and Unknown when the output is lost', () => {
+    expect(dispatch(inSync(), { type: 'outputConnected' }).state.sync).toBe('possiblyStale');
+    expect(dispatch(inSync(), { type: 'outputLost' }).state.sync).toBe('unknown');
+  });
+
+  it('is Possibly Stale after a failed send or a Raw MIDI message, but stays Unknown if it was', () => {
+    expect(dispatch(inSync(), { type: 'sendFailed' }).state.sync).toBe('possiblyStale');
+    expect(dispatch(inSync(), { type: 'rawSent' }).state.sync).toBe('possiblyStale');
+    expect(dispatch(onMidiChannel5(), { type: 'sendFailed' }).state.sync).toBe('unknown');
+    expect(dispatch(onMidiChannel5(), { type: 'rawSent' }).state.sync).toBe('unknown');
+  });
+
+  it('is Possibly Stale after the MIDI channel changes, since live sends may no longer reach the pedal', () => {
+    expect(dispatch(inSync(), { type: 'setMidiChannel', midiChannel: 6 }).state.sync).toBe('possiblyStale');
+    expect(dispatch(inSync(), { type: 'setMidiChannel', midiChannel: 5 }).state.sync).toBe('inSync');
   });
 });

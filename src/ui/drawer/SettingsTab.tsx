@@ -1,4 +1,5 @@
 import { useId, type ReactNode } from 'react';
+import { SEND_GAP_RANGE, useEditorStore } from '../../store/editorStore';
 import { STORAGE_STATUS_HELP, STORAGE_STATUS_LABELS, UPDATE_WAITING_HELP, useAppStore } from '../../store/appStore';
 import { isTheme, THEMES, UI_SCALE_RANGE, useSettingsStore } from '../../store/settingsStore';
 
@@ -27,6 +28,7 @@ function Setting({ label, help, children }: { label: string; help: string; child
 /** The editor's own settings. None of them is sent to the pedal. */
 export function SettingsTab() {
   const { theme, uiScale, update } = useSettingsStore();
+  const { sendGapMs, setSendGapMs } = useEditorStore();
 
   return (
     <div className="settings-tab">
@@ -54,6 +56,24 @@ export function SettingsTab() {
               onChange={(e) => update({ uiScale: e.target.valueAsNumber })}
             />
             <output className="setting-value">{uiScale}%</output>
+          </span>
+        )}
+      </Setting>
+      <Setting label="Send All gap" help="The pause between Send All messages. Raise it if the pedal misses some.">
+        {(props) => (
+          <span className="setting-control">
+            <input
+              {...props}
+              type="number"
+              min={SEND_GAP_RANGE.min}
+              max={SEND_GAP_RANGE.max}
+              value={sendGapMs}
+              onChange={(e) => {
+                const ms = e.target.valueAsNumber;
+                if (Number.isInteger(ms) && ms >= SEND_GAP_RANGE.min && ms <= SEND_GAP_RANGE.max) setSendGapMs(ms);
+              }}
+            />
+            ms
           </span>
         )}
       </Setting>
