@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
-export type DrawerTab = 'settings';
+export type DrawerTab = 'monitor' | 'settings';
 
 type LayoutStore = {
   drawerOpen: boolean;

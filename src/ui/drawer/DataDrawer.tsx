@@ -1,12 +1,18 @@
+import { useEditorStore } from '../../store/editorStore';
 import { useLayoutStore, type DrawerTab } from '../../store/layoutStore';
 import { DATA_BUTTON_ID, DATA_DRAWER_ID, DRAWER_PANEL_ID, drawerTabId } from '../domIds';
+import { MidiMonitor } from './MidiMonitor';
 import { SettingsTab } from './SettingsTab';
 
-const TABS: { id: DrawerTab; label: string }[] = [{ id: 'settings', label: 'Settings' }];
+const TABS: { id: DrawerTab; label: string }[] = [
+  { id: 'monitor', label: 'MIDI Monitor' },
+  { id: 'settings', label: 'Settings' },
+];
 
-/** A slide-over with the editor's Settings. Inert while closed; Escape closes it. */
+/** A slide-over with the MIDI Monitor and the editor's Settings. Inert while closed; Escape closes it. */
 export function DataDrawer() {
   const { drawerOpen, drawerTab, showTab, closeDrawer } = useLayoutStore();
+  const sentCount = useEditorStore((s) => s.sent.length);
 
   return (
     <aside
@@ -34,6 +40,7 @@ export function DataDrawer() {
             onClick={() => showTab(t.id)}
           >
             {t.label}
+            {t.id === 'monitor' && sentCount > 0 && <span className="tab-badge">{sentCount}</span>}
           </button>
         ))}
         <button type="button" className="drawer-close" aria-label="Close Data drawer" onClick={closeDrawer}>
@@ -41,6 +48,7 @@ export function DataDrawer() {
         </button>
       </div>
       <div id={DRAWER_PANEL_ID} className="drawer-body" role="tabpanel" aria-labelledby={drawerTabId(drawerTab)}>
+        {drawerTab === 'monitor' && <MidiMonitor />}
         {drawerTab === 'settings' && <SettingsTab />}
       </div>
     </aside>

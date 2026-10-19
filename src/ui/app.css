@@ -105,6 +105,14 @@ button:disabled {
   border: 0;
 }
 
+.is-muted {
+  color: var(--muted);
+}
+
+.is-strong {
+  font-weight: 600;
+}
+
 /* ── Layout ─────────────────────────────────────────────────────────── */
 
 .app {
@@ -543,6 +551,11 @@ button:disabled {
   color: var(--paper);
 }
 
+.tab-badge {
+  font-size: 10px;
+  opacity: 0.7;
+}
+
 .drawer-close {
   margin-left: auto;
   width: 44px;
@@ -556,6 +569,104 @@ button:disabled {
   flex: 1;
   overflow: auto;
   padding: 14px 20px;
+}
+
+/* ── MIDI Monitor ───────────────────────────────────────────────────── */
+
+.monitor-head {
+  display: flex;
+  justify-content: space-between;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--ink);
+  font: 600 10px var(--font-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.link-button {
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  color: inherit;
+  text-decoration: underline;
+}
+
+.monitor-empty {
+  margin: 0;
+  padding: 20px 0;
+  font: 500 12px/1.5 var(--font-mono);
+  color: var(--muted);
+}
+
+.monitor-log {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.monitor-log li {
+  display: grid;
+  grid-template-columns: 68px 40px 48px 48px minmax(0, 1fr);
+  font: 500 12px/30px var(--font-mono);
+  border-bottom: 1px dotted var(--rule-light);
+}
+
+.monitor-label {
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.raw-midi {
+  margin-top: 20px;
+  font: 500 12px var(--font-mono);
+}
+
+.raw-midi summary {
+  cursor: pointer;
+  font: 600 10px var(--font-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.raw-midi form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  margin-top: 10px;
+}
+
+.raw-midi label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.raw-midi input[type='number'] {
+  width: 4.5rem;
+  padding: 3px 6px;
+  border: 1px solid var(--border-soft);
+  border-radius: 4px;
+  background: var(--card);
+}
+
+.raw-midi button {
+  padding: 5px 10px;
+  border: 1px solid var(--ink);
+  border-radius: 4px;
+  background: transparent;
+  font: 600 11px var(--font-mono);
+}
+
+.raw-midi-hint {
+  color: var(--muted);
 }
 
 /* ── Settings ───────────────────────────────────────────────────────── */

@@ -10,7 +10,7 @@ A full-featured software editor for the Hologram Chroma Console multi-effects pe
 - SPEC.md - The v1 spec (also filed as a GitHub issue)
 - CONTEXT.md - Domain glossary; use these terms exactly in code, UI and docs
 - docs/adr/ - Architecture decision records
-- docs/hardware-checks.md - Unverified pedal behaviour to confirm on real hardware (not yet written; must be resolved before the Library/Commit milestone)
+- docs/hardware-checks.md - Unverified pedal behaviour to confirm on real hardware (written, not yet run, #9; must be resolved before the Library/Commit milestone)
 - /home/rodst/Repos/clean - The Clean editor this repo is forked from (commit 5f5a381); port generic fixes between the editors by hand
 - /home/rodst/Repos/lost+found - The Lost+Found editor Clean was forked from
 - /home/rodst/Repos/papercuts.md - Global log of things that slowed down development

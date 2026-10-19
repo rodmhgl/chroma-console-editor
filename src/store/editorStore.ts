@@ -8,6 +8,7 @@ import type { MidiPort } from '../midi/transport/types';
 import { VIRTUAL_PEDAL_PORT, createVirtualPedal, type VirtualPedal } from '../midi/transport/virtual';
 import { requestWebMidi, type WebMidi } from '../midi/transport/webmidi';
 import { dispatch, initialEditorState, type EditorAction, type EditorState } from '../model/core';
+import { logSent, type SentMessage } from './monitor';
 
 /** Continuous controls send at most one message per this many ms each, so a drag can't flood the pedal. */
 const CONTINUOUS_SEND_MS = 5;
@@ -26,6 +27,11 @@ type EditorStore = {
   /** Virtual Pedal first, then every connected Web MIDI output. */
   outputs: MidiPort[];
   outputId: string;
+  /** Outgoing messages for the MIDI Monitor, newest first. */
+  sent: SentMessage[];
+  /** A message typed in Raw MIDI, for hardware checks: sent to the selected output unchanged, never throttled. */
+  sendRaw(bytes: MidiMessage): void;
+  clearSent(): void;
   /** Sets the MIDI channel the editor sends on, 1–16. It must match the pedal's own, set in its Global Settings. */
   setMidiChannel(midiChannel: number): void;
   setOutput(id: string): void;
@@ -34,16 +40,22 @@ type EditorStore = {
   connectWebMidi(): Promise<void>;
 };
 
+/** Monitor times count from when the editor started. */
+const startedAt = Date.now();
+
 /** The Editor State and the connection to the pedal, sending to `virtualPedal` whenever it is the selected output. */
 export function createEditorStore(virtualPedal: VirtualPedal) {
   /** Shared so React StrictMode's double effect asks the browser only once. */
   let webMidiRequest: Promise<void> | undefined;
+  let nextSentId = 1;
 
   return create<EditorStore>((set, get) => {
+    /** Every message the editor sends goes out here, and so into the MIDI Monitor. */
     const sendToOutput = (bytes: MidiMessage) => {
       const { outputId, webMidi } = get();
       if (outputId === VIRTUAL_PEDAL_PORT.id) virtualPedal.send(bytes);
       else webMidi?.send(bytes);
+      set((s) => ({ sent: logSent(s.sent, { id: nextSentId++, at: Date.now() - startedAt, bytes }) }));
     };
     const continuousThrottle = createThrottle(CONTINUOUS_SEND_MS, sendToOutput);
     /** Paces continuous controls through the throttle, like a knob; everything else goes straight out. */
@@ -91,6 +103,11 @@ export function createEditorStore(virtualPedal: VirtualPedal) {
       webMidiStatus: 'pending',
       outputs: [VIRTUAL_PEDAL_PORT],
       outputId: VIRTUAL_PEDAL_PORT.id,
+      sent: [],
+      sendRaw: sendToOutput,
+      clearSent() {
+        set({ sent: [] });
+      },
       setMidiChannel(midiChannel) {
         apply({ type: 'setMidiChannel', midiChannel });
       },

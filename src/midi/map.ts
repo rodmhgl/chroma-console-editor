@@ -126,3 +126,101 @@ export function clampToParam(param: ParamDef, value: number): number {
   const v = Math.min(param.max, Math.max(param.min, Math.round(value)));
   return param.kind === 'effect' ? effectAt(param, v)!.value : v;
 }
+
+const SLOTS_PER_BANK = 20;
+/** Program Change 0 to one below this recalls a Slot. */
+export const SLOT_COUNT = 4 * SLOTS_PER_BANK;
+
+/** A Slot's address, Bank + number (e.g. "D-14"), for the Program Change that recalls it; undefined past the 80 Slots. */
+export function slotAddress(program: number): string | undefined {
+  if (program < 0 || program >= SLOT_COUNT) return undefined;
+  return `${'ABCD'[Math.floor(program / SLOTS_PER_BANK)]}-${(program % SLOTS_PER_BANK) + 1}`;
+}
+
+/** A CC's values split into named bands, each given by its highest value: the bands run from 0 up to 127. */
+type ValueBands = readonly (readonly [max: number, label: string])[];
+
+/** What a CC controls, as the MIDI implementation chart (manual §16) names it, and its named values if it has any. */
+type ChartEntry = { name: string; values?: ValueBands };
+
+/** An Effect selection's bands; 110–127 is the chart's OFF, which is not the same as Bypassed. */
+const effectBands = (...effects: [string, string, string, string, string]): ValueBands => [
+  ...effects.map((label, i) => [(i + 1) * EFFECT_RANGE - 1, label] as const),
+  [127, 'OFF'],
+];
+const halves = (low: string, high: string): ValueBands => [
+  [63, low],
+  [127, high],
+];
+const ENGAGED_BANDS = halves('Bypassed', 'Engaged');
+const thirds = (low: string, middle: string, high: string): ValueBands => [
+  [43, low],
+  [87, middle],
+  [127, high],
+];
+
+/**
+ * The rest of the MIDI implementation chart: every CC not yet in PARAMS, for describing any message sent (the MIDI
+ * Monitor). Tilt, Rate, Time and Mix belong to the Module whose column they sit in. A CC leaves here when it joins PARAMS.
+ */
+const MIDI_CHART: Record<number, ChartEntry> = {
+  17:{ name: 'Movement', values: effectBands('Doubler', 'Vibrato', 'Phaser', 'Tremolo', 'Pitch') },
+  18: { name: 'Diffusion', values: effectBands('Cascade', 'Reels', 'Space', 'Collage', 'Reverse') },
+  19: { name: 'Texture', values: effectBands('Filter', 'Squash', 'Cassette', 'Broken', 'Interference') },
+  66: { name: 'Movement → Rate' },
+  67: { name: 'Movement → Amount' },
+  68: { name: 'Diffusion → Time' },
+  69: { name: 'Diffusion → Amount' },
+  70: { name: 'Texture → Mix' },
+  71: { name: 'Texture → Amount' },
+  72: { name: 'Character → Sensitivity' },
+  73: { name: 'Character → Effect Vol' },
+  74: { name: 'Movement → Drift' },
+  75: { name: 'Movement → Effect Vol' },
+  76: { name: 'Diffusion → Drift' },
+  77: { name: 'Diffusion → Effect Vol' },
+  78: { name: 'Output Level' },
+  79: { name: 'Texture → Effect Vol' },
+  80: { name: 'Gesture', values: halves('Play', 'Record') },
+  81: { name: 'Gesture → Stop/Erase' },
+  82: { name: 'Capture', values: thirds('Stop/Clear', 'Play', 'Record') },
+  83: { name: 'Capture Routing', values: halves('Post-FX', 'Pre-FX') },
+  84: { name: 'Filter style', values: thirds('Lowpass', 'Tilt', 'Highpass') },
+  91: { name: 'Pedal', values: ENGAGED_BANDS },
+  92: {
+    name: 'Dual Bypass',
+    values: [
+      [31, 'Total Bypass'],
+      [63, 'Dual Bypass'],
+      [127, 'Total Engage'],
+    ],
+  },
+  93: { name: 'Tap' },
+  94: {
+    name: 'Calibration Level',
+    values: [
+      [31, 'Low'],
+      [63, 'Medium'],
+      [95, 'High'],
+      [127, 'Very High'],
+    ],
+  },
+  95: { name: 'Calibration menu', values: halves('Exit', 'Enter') },
+  103: { name: 'Character', values: ENGAGED_BANDS },
+  104: { name: 'Movement', values: ENGAGED_BANDS },
+  105: { name: 'Diffusion', values: ENGAGED_BANDS },
+  106: { name: 'Texture', values: ENGAGED_BANDS },
+};
+
+/**
+ * What a CC and value do on the pedal, e.g. "Character → Howl" for CC 16 = 76 or "Character → Amount" for a level;
+ * undefined for a CC not in the MIDI implementation chart.
+ */
+export function describeCc(cc: number, value: number): string | undefined {
+  const param = paramByCc(cc);
+  if (param) return `${MODULES[param.module]} → ${settingLabel(param, value) ?? param.label}`;
+  const entry = MIDI_CHART[cc];
+  if (!entry) return undefined;
+  const band = entry.values?.find(([max]) => value <= max);
+  return band ? `${entry.name} → ${band[1]}` : entry.name;
+}

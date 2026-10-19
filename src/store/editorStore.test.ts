@@ -131,4 +131,65 @@ describe('editor store sending', () => {
 
     expect(usb.send).toHaveBeenCalledWith([0xb0, 16, 54]);
   });
+
+  it('lists what it sends in the MIDI Monitor once it has gone out, the throttled drag as one row', () => {
+    vi.useFakeTimers();
+    const store = createEditorStore(createVirtualPedal());
+
+    store.getState().selectEffect('characterEffect', 'howl');
+    for (const value of [70, 71, 72]) store.getState().setParam('characterAmount', value);
+    vi.runAllTimers();
+
+    expect(store.getState().sent.map((m) => m.bytes)).toEqual([
+      [0xb0, 65, 72],
+      [0xb0, 16, 76],
+    ]);
+  });
+});
+
+describe('editor store Raw MIDI', () => {
+  const heardBy = (pedal: ReturnType<typeof createVirtualPedal>) => pedal.getSnapshot().log.map((e) => e.text);
+
+  it('sends every message unchanged and at once, however fast, and lists each in the MIDI Monitor', () => {
+    const pedal = createVirtualPedal();
+    const store = createEditorStore(pedal);
+
+    for (const value of [1, 2, 3]) store.getState().sendRaw([0xb0, 93, value]);
+    store.getState().sendRaw([0xc0, 3]);
+
+    expect(heardBy(pedal)).toEqual([
+      'CC 93 = 1 → (not in MIDI map)',
+      'CC 93 = 2 → (not in MIDI map)',
+      'CC 93 = 3 → (not in MIDI map)',
+      'PC 3 → (not in MIDI map)',
+    ]);
+    // Newest first, with the repeated CC folded into one row that shows its latest value.
+    expect(store.getState().sent.map((m) => m.bytes)).toEqual([
+      [0xc0, 3],
+      [0xb0, 93, 3],
+    ]);
+  });
+
+  it('sends to a Web MIDI output once it is selected, and not to the Virtual Pedal', async () => {
+    const usb = output('usb', PEDAL_NAME);
+    fakeWebMidi([usb]);
+    const pedal = createVirtualPedal();
+    const store = createEditorStore(pedal);
+    await store.getState().connectWebMidi();
+
+    store.getState().sendRaw([0xb4, 16, 76]);
+
+    expect(usb.send).toHaveBeenCalledWith([0xb4, 16, 76]);
+    expect(heardBy(pedal)).toEqual([]);
+    expect(store.getState().sent.map((m) => m.bytes)).toEqual([[0xb4, 16, 76]]);
+  });
+
+  it('clears the MIDI Monitor', () => {
+    const store = createEditorStore(createVirtualPedal());
+    store.getState().sendRaw([0xb0, 93, 1]);
+
+    store.getState().clearSent();
+
+    expect(store.getState().sent).toEqual([]);
+  });
 });
