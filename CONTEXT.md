@@ -18,7 +18,7 @@ _Avoid_: Algorithm, mode, type
 
 **Effect Colour**:
 The colour — red, yellow, green, blue or purple — the pedal lights a Module button to show its selected Effect; fixed by the Effect's place in its Module (e.g. Drive, Doubler, Cascade and Filter are all red).
-_Avoid_: Effect LED, Module Colour
+_Avoid_: Effect LED
 
 **Module Colour**:
 The fixed colour of a Module's knobs: Character red, Movement yellow, Diffusion green, Texture blue. Distinct from Effect Colour, which changes with the selected Effect.
