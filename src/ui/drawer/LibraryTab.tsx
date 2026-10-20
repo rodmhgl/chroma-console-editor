@@ -1,12 +1,15 @@
-import { useState, type ChangeEvent, type KeyboardEvent } from 'react';
+import { useRef, useState, type ChangeEvent, type KeyboardEvent } from 'react';
 import { MAX_NAME_LENGTH } from '../../model/schema';
 import {
   MODIFIED_HELP,
+  backupDue,
   folderAccessAvailable,
   goneMessage,
   libraryReachable,
   useLibraryStore,
   useWorkingStateModified,
+  type ConflictChoice,
+  type ImportFile,
   type LibraryEntry,
   type PresetDetails,
 } from '../../store/library';
@@ -38,12 +41,16 @@ export function LibraryTab() {
     duplicate,
     deletePreset,
     openPreset,
+    exportPreset,
+    exportBundle,
+    importFiles,
   } = useLibraryStore();
   const modified = useWorkingStateModified();
   // A remembered folder still to open counts: the action opens it first.
   const reachable = libraryReachable({ folderName, remembered });
   const [editing, setEditing] = useState<Editing>(null);
   const [error, setError] = useState<string | null>(null);
+  const importInput = useRef<HTMLInputElement>(null);
 
   /** Runs a file action, showing what went wrong instead of failing silently. Resolves whether it worked. */
   const runFileAction = async (action: () => Promise<unknown>) => {
@@ -62,6 +69,22 @@ export function LibraryTab() {
       if (!(await save())) setEditing({ kind: 'saveAs' });
     });
   const startNew = useArmedConfirm(() => void runFileAction(newWorkingState), source, modified);
+  // A remembered folder is reopened first: the browser only asks for permission in the click itself, not once the
+  // file chooser has closed.
+  const chooseImportFiles = async () => {
+    if (remembered?.status === 'needsPermission' && !(await runFileAction(reopenFolder))) return;
+    if (useLibraryStore.getState().remembered?.status === 'needsPermission') return;
+    importInput.current?.click();
+  };
+  const importPicked = (files: FileList | null) => {
+    const picked = [...(files ?? [])];
+    if (importInput.current) importInput.current.value = '';
+    if (picked.length === 0) return;
+    void runFileAction(async () => {
+      const read: ImportFile[] = await Promise.all(picked.map(async (f) => ({ name: f.name, text: await f.text() })));
+      await importFiles(read);
+    });
+  };
 
   return (
     <div className="library-tab">
@@ -110,7 +133,9 @@ export function LibraryTab() {
 
       {storage === 'browser' ? (
         <div className="library-folder">
-          <span title="Clearing this site’s data in the browser deletes it.">Browser storage · kept in this browser only</span>
+          <span title="Clearing this site’s data in the browser deletes it. Export a Bundle to keep a copy.">
+            Browser storage · kept in this browser only
+          </span>
         </div>
       ) : remembered?.status === 'opening' ? (
         <div className="library-folder" role="status">
@@ -163,6 +188,42 @@ export function LibraryTab() {
         </details>
       )}
 
+      <BackupReminder />
+
+      {reachable && (
+        <div className="library-exchange">
+          <button
+            type="button"
+            className="outline-button"
+            title="Adds the Presets in Preset and Bundle files to the Library."
+            onClick={chooseImportFiles}
+          >
+            Import…
+          </button>
+          <input
+            ref={importInput}
+            type="file"
+            accept=".json,application/json"
+            multiple
+            hidden
+            aria-label="Import Preset or Bundle files"
+            onChange={(e) => importPicked(e.target.files)}
+          />
+          <button
+            type="button"
+            className="outline-button"
+            disabled={presets.length === 0}
+            title="Saves every Preset in the Library as one Bundle file, to share or back up."
+            onClick={exportBundle}
+          >
+            Export Bundle
+          </button>
+        </div>
+      )}
+
+      <ImportConflictPrompt />
+      <ImportReportView />
+
       {folderName && (
         <ul className="preset-list" aria-label="Presets">
           {presets.length === 0 && (
@@ -182,6 +243,7 @@ export function LibraryTab() {
               onCancelEdit={() => setEditing(null)}
               onDuplicate={() => runFileAction(() => duplicate(entry.preset.id))}
               onDelete={() => runFileAction(() => deletePreset(entry.preset.id))}
+              onExport={() => exportPreset(entry.preset.id)}
             />
           ))}
         </ul>
@@ -204,6 +266,7 @@ function PresetRow(props: {
   onCancelEdit(): void;
   onDuplicate(): void;
   onDelete(): void;
+  onExport(): void;
 }) {
   const { preset, fileName } = props.entry;
   const { browser } = props;
@@ -261,6 +324,15 @@ function PresetRow(props: {
       </button>
       <button
         type="button"
+        className="text-button"
+        aria-label={`Export ${preset.name}`}
+        title="Saves this Preset as a file to share or keep."
+        onClick={props.onExport}
+      >
+        Export
+      </button>
+      <button
+        type="button"
         className={`text-button${remove.armed ? ' is-armed' : ''}`}
         aria-label={remove.armed ? `Delete ${preset.name}? Click again` : `Delete ${preset.name}`}
         title={
@@ -280,6 +352,105 @@ function PresetRow(props: {
 function formatDate(iso: string): string {
   const date = new Date(iso);
   return Number.isNaN(date.getTime()) ? '—' : date.toLocaleDateString();
+}
+
+/** A browser storage Library is lost with the browser's site data, so it asks every so often to be backed up. */
+function BackupReminder() {
+  const due = useLibraryStore((s) => backupDue(s, new Date().toISOString()));
+  const exportBundle = useLibraryStore((s) => s.exportBundle);
+  const snoozeBackup = useLibraryStore((s) => s.snoozeBackup);
+  if (!due) return null;
+  return (
+    <section className="library-reminder" role="status" aria-label="Back up your Library">
+      <span>Back up your Library: it lives only in this browser, and clearing site data deletes it.</span>
+      <div className="working-card-actions">
+        <button type="button" className="solid-button" onClick={exportBundle}>
+          Back up now
+        </button>
+        <button type="button" className="outline-button" onClick={snoozeBackup}>
+          Later
+        </button>
+      </div>
+    </section>
+  );
+}
+
+/** Asks what to do with an imported Preset whose id is already in the Library with different contents. */
+function ImportConflictPrompt() {
+  const conflicts = useLibraryStore((s) => s.conflicts);
+  const resolveConflicts = useLibraryStore((s) => s.resolveConflicts);
+  const [applyToAll, setApplyToAll] = useState(false);
+  const [first] = conflicts;
+  if (!first) return null;
+  const answer = (choice: ConflictChoice) => void resolveConflicts(choice, applyToAll);
+  return (
+    <section className="library-reminder" role="alertdialog" aria-label="Import conflict">
+      <span>
+        “{first.incoming.name}” is already in the Library as “{first.existing.name}”, with different settings.
+      </span>
+      {conflicts.length > 1 && (
+        <label className="library-apply-all">
+          <input type="checkbox" checked={applyToAll} onChange={(e) => setApplyToAll(e.target.checked)} /> Apply to all{' '}
+          {conflicts.length}
+        </label>
+      )}
+      <div className="working-card-actions">
+        <button
+          type="button"
+          className="solid-button"
+          title="Overwrites the Library’s copy. Slots committed from it stay linked."
+          onClick={() => answer('replace')}
+        >
+          Replace
+        </button>
+        <button
+          type="button"
+          className="outline-button"
+          title="Adds the imported Preset as a new one."
+          onClick={() => answer('keepBoth')}
+        >
+          Keep Both
+        </button>
+      </div>
+    </section>
+  );
+}
+
+/** What the last Import did. */
+function ImportReportView() {
+  const report = useLibraryStore((s) => s.importReport);
+  const waiting = useLibraryStore((s) => s.conflicts.length);
+  const dismiss = useLibraryStore((s) => s.dismissImportReport);
+  if (!report) return null;
+  const parts = [
+    `${report.added} added`,
+    report.replaced && `${report.replaced} replaced`,
+    report.keptBoth && `${report.keptBoth} Keep Both`,
+    report.skipped && `${report.skipped} already in the Library`,
+    waiting && `${waiting} waiting`,
+  ].filter(Boolean);
+  return (
+    <section className="library-import-report" role="status" aria-label="Import">
+      <div className="library-folder">
+        <span>Import · {parts.join(' · ')}</span>
+        <button type="button" className="text-button" onClick={dismiss}>
+          Dismiss
+        </button>
+      </div>
+      {report.problems.length > 0 && (
+        <details className="library-problems">
+          <summary>
+            {report.problems.length} import {report.problems.length === 1 ? 'problem' : 'problems'}
+          </summary>
+          <ul>
+            {report.problems.map((p) => (
+              <li key={p}>{p}</li>
+            ))}
+          </ul>
+        </details>
+      )}
+    </section>
+  );
 }
 
 /** Escape cancels the form only: the drawer stays open. */
