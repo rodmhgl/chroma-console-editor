@@ -56,6 +56,9 @@ export type EditorState = {
  */
 export type Snapshot = { state: WorkingState; showing: boolean };
 
+/** The parts of the Editor State kept between sessions. */
+export type RestoredSession = Pick<EditorState, 'working' | 'snapshot' | 'slotMap' | 'confirmed'> & { midiChannel: number };
+
 export type EditorAction =
   /** Any Working State param, clamped into its range. */
   | { type: 'setParam'; id: PresetParamId; value: number }
@@ -75,6 +78,11 @@ export type EditorAction =
    * Working State; any other leaves the Working State alone, no longer what the pedal sounds.
    */
   | { type: 'recallSlot'; slot: number }
+  /**
+   * At launch, what the last session left (session.ts checks it). Sends nothing, and is Possibly Stale: the pedal may
+   * have been changed since. Clears the undo history, which isn't kept.
+   */
+  | ({ type: 'restore' } & RestoredSession)
   /** Module Order, a Pedal Step setting: sends nothing and needs its Pedal Step confirming. Ignored unless all four Modules. */
   | { type: 'setModuleOrder'; order: ModuleId[] }
   /** The user has performed the Pedal Step for a setting, so the pedal now holds its Working State value. Not undoable. */
@@ -194,6 +202,11 @@ export function dispatch(state: EditorState, action: EditorAction): CoreResult {
         state: sync(recalled, entry ? 'recallKnown' : 'recallUnknown'),
         messages: [programChange(state.global.midiChannel, action.slot)],
       };
+    }
+    case 'restore': {
+      const { working, snapshot, slotMap, confirmed, midiChannel } = action;
+      const restored = { ...state, working, snapshot, slotMap, confirmed, global: { ...state.global, midiChannel }, history: history.EMPTY_HISTORY };
+      return { state: sync(restored, 'restore'), messages: [] };
     }
     case 'setModuleOrder': {
       const index = moduleOrderIndex(action.order);

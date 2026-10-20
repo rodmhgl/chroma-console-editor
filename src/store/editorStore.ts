@@ -22,6 +22,7 @@ import { requestWebMidi, type WebMidi } from '../midi/transport/webmidi';
 import { dispatch, encodeParam, initialEditorState, sendAllOrder, type EditorAction, type EditorState } from '../model/core';
 import type { WorkingState } from '../model/state';
 import { logSent, type SentMessage } from './monitor';
+import type { Session } from './session';
 
 /** Continuous controls send at most one message per this many ms each, so a drag can't flood the pedal. */
 const CONTINUOUS_SEND_MS = 5;
@@ -82,6 +83,8 @@ type EditorStore = {
    * False, sending nothing, with no output connected. Abandons a Send All, which would send over what the Slot holds.
    */
   recallSlot(slot: number): boolean;
+  /** At launch, takes up what the last session left: Possibly Stale, sending nothing (see persistence.ts). */
+  restore(session: Session): void;
   sendingAll: boolean;
   /** An output is connected and no Send All is running. */
   canSendAll(): boolean;
@@ -242,6 +245,10 @@ export function createEditorStore(virtualPedal: VirtualPedal) {
         abandonSendAll();
         apply({ type: 'recallSlot', slot });
         return true;
+      },
+      restore({ working, snapshot, slotMap, confirmed, midiChannel, settings }) {
+        apply({ type: 'restore', working, snapshot, slotMap, confirmed, midiChannel });
+        set({ sendGapMs: settings.sendGapMs });
       },
       async sendAll() {
         const run = ++sendAllRun;

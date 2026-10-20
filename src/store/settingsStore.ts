@@ -23,7 +23,12 @@ export const UI_SCALE_RANGE = { min: 75, max: 200 };
 
 export const DEFAULT_UI_SETTINGS: UiSettings = { theme: 'light', uiScale: 100 };
 
-type SettingsStore = UiSettings & { update(change: Partial<UiSettings>): void };
+/** Just the UI settings of `s`, such as the settings store's state or a stored session's Settings. */
+export function uiSettingsOf({ theme, uiScale }: UiSettings): UiSettings {
+  return { theme, uiScale };
+}
+
+type SettingsStore =UiSettings & { update(change: Partial<UiSettings>): void };
 
 export function createSettingsStore() {
   return create<SettingsStore>((set) => ({
