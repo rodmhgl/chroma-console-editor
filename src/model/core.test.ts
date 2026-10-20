@@ -1045,7 +1045,7 @@ describe('restore', () => {
     working,
     snapshot: { state: { ...working, mix: 40 }, showing: true },
     slotMap: { 12: { committed: working, presetId: 'p-1', name: 'Shimmer' } },
-    confirmed: { moduleOrder: 3 },
+    confirmed: { ...initialEditorState().confirmed, moduleOrder: 3 },
     midiChannel: 9,
   };
   const connected = () => dispatch(onMidiChannel5(), { type: 'outputConnected' }).state;

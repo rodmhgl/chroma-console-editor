@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { initialEditorState } from '../model/core';
 import { defaultWorkingState } from '../model/state';
 import { DEFAULT_SEND_GAP_MS } from './editorStore';
 import { SESSION_VERSION, parseSession, type Session } from './session';
@@ -9,7 +10,7 @@ const session: Session = {
   working,
   snapshot: { state: { ...working, mix: 40 }, showing: true },
   slotMap: { 12: { committed: working, presetId: 'p-1', name: 'Shimmer' }, 13: { committed: working, presetId: null, name: 'Untitled' } },
-  confirmed: { moduleOrder: 3 },
+  confirmed: { ...initialEditorState().confirmed, moduleOrder: 3 },
   midiChannel: 9,
   source: { presetId: 'p-1', name: 'Shimmer', params: defaultWorkingState() },
   settings: { theme: 'charcoal', uiScale: 150, sendGapMs: 12 },
@@ -43,7 +44,7 @@ describe('parseSession', () => {
       working: { ...defaultWorkingState(), tilt: 20, mix: 127, characterEffect: 98 },
       snapshot: null,
       slotMap: { 12: session.slotMap[12] },
-      confirmed: { moduleOrder: defaultWorkingState().moduleOrder },
+      confirmed: initialEditorState().confirmed,
       midiChannel: 1,
       source: null,
       settings: { theme: 'light', uiScale: 200, sendGapMs: 0 },
