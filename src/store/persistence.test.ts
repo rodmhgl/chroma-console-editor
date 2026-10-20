@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { create } from 'zustand';
 import { createVirtualPedal } from '../midi/transport/virtual';
-import { syncStatus } from '../model/core';
+import { initialEditorState, syncStatus } from '../model/core';
 import { defaultWorkingState } from '../model/state';
 import { createEditorStore } from './editorStore';
 import type { WorkingSource } from './library';
@@ -53,7 +53,7 @@ const session: Session = {
   working,
   snapshot: { state: { ...working, mix: 40 }, showing: false },
   slotMap: { 12: { committed: working, presetId: 'p-1', name: 'Shimmer' } },
-  confirmed: { moduleOrder: 3 },
+  confirmed: { ...initialEditorState().confirmed, moduleOrder: 3 },
   midiChannel: 9,
   source: { presetId: 'p-1', name: 'Shimmer', params: defaultWorkingState() },
   settings: { theme: 'charcoal', uiScale: 150, sendGapMs: 12 },
