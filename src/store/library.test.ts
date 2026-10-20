@@ -1,10 +1,19 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createVirtualPedal, type VirtualPedal } from '../midi/transport/virtual';
 import { syncStatus } from '../model/core';
-import { parsePreset, serializePreset, type Preset } from '../model/schema';
+import { PARAMS } from '../midi/map';
+import { parsePreset, serializeBundle, serializePreset, type Preset } from '../model/schema';
 import { defaultWorkingState } from '../model/state';
 import { createEditorStore } from './editorStore';
-import { createLibraryStore, isModified, slotInfo, type LibraryDeps, type PickedFolder } from './library';
+import {
+  BACKUP_INTERVAL_DAYS,
+  backupDue,
+  createLibraryStore,
+  isModified,
+  slotInfo,
+  type LibraryDeps,
+  type PickedFolder,
+} from './library';
 
 /**
  * A Library folder held in memory: file name → contents. `permission` is what the browser allows without asking,
@@ -70,6 +79,10 @@ let clock = 0;
 let ids = 0;
 /** The Library folder the editor remembers for the next launch. */
 let remembered: PickedFolder | null;
+/** Files handed to the browser to save. */
+let downloads: { fileName: string; text: string }[];
+/** When the Library was last backed up, as kept across launches. */
+let backupCheckedAt: string | null;
 
 function deps(folder: PickedFolder | null, browserFolder = memoryFolder().folder): LibraryDeps {
   return {
@@ -77,6 +90,13 @@ function deps(folder: PickedFolder | null, browserFolder = memoryFolder().folder
     openBrowserStorage: async () => browserFolder,
     now: () => new Date(clock++ * 60_000 + Date.UTC(2026, 9, 5)).toISOString(),
     newId: () => `new-${++ids}`,
+    download: (fileName, text) => downloads.push({ fileName, text }),
+    backupLog: {
+      load: () => backupCheckedAt,
+      save: (at) => {
+        backupCheckedAt = at;
+      },
+    },
     rememberedFolder: {
       load: async () => remembered,
       save: async (picked) => {
@@ -106,6 +126,8 @@ beforeEach(() => {
   clock = 0;
   ids = 0;
   remembered = null;
+  downloads = [];
+  backupCheckedAt = null;
 });
 
 describe('picking a Library folder', () => {
@@ -262,6 +284,15 @@ describe('the remembered Library folder', () => {
     expect(asked.count).toBe(1);
     expect(Object.keys(files)).toEqual(['shimmer-tape.ccpreset.json']);
     expect(library.getState()).toMatchObject({ folderName: 'My Presets', remembered: null });
+  });
+
+  it('is opened by Import too', async () => {
+    remembered = memoryFolder({}, 'prompt', 'granted').folder;
+    await launch();
+
+    await library.getState().importFiles([importFile('a.ccpreset.json', serializePreset(preset('A')))]);
+
+    expect(library.getState().presets.map((p) => p.preset.name)).toEqual(['A']);
   });
 
   it('says access was refused when a Library action can’t open it', async () => {
@@ -649,5 +680,243 @@ describe('the browser storage Library', () => {
   it('a folder Library is a folder', async () => {
     await setup(memoryFolder().folder);
     expect(library.getState().storage).toBe('folder');
+  });
+});
+
+describe('Export', () => {
+  it('hands a Preset to the browser to save as its own Preset file', async () => {
+    const shimmer = preset('Shimmer Tape', { tilt: 20 });
+    await setup(memoryFolder({ 's.ccpreset.json': serializePreset(shimmer) }).folder);
+
+    library.getState().exportPreset(shimmer.id);
+
+    expect(downloads).toEqual([{ fileName: 'shimmer-tape.ccpreset.json', text: serializePreset(shimmer) }]);
+  });
+
+  it('hands every Preset to the browser as one Bundle named after the Library, and counts as a backup', async () => {
+    const a = preset('A');
+    const b = preset('B');
+    await setup(memoryFolder({ 'b.ccpreset.json': serializePreset(b), 'a.ccpreset.json': serializePreset(a) }).folder);
+
+    library.getState().exportBundle();
+
+    expect(downloads).toEqual([
+      {
+        fileName: 'my-presets-2026-10-05.ccbundle.json',
+        text: serializeBundle('My Presets', [a, b], '2026-10-05T00:00:00.000Z'),
+      },
+    ]);
+    expect(backupCheckedAt).toBe('2026-10-05T00:00:00.000Z');
+    expect(library.getState().backupCheckedAt).toBe('2026-10-05T00:00:00.000Z');
+  });
+});
+
+/** A file the user picked to import. */
+const importFile = (name: string, text: string) => ({ name, text });
+
+describe('Import', () => {
+  it('adds the Presets from Preset files and Bundles, keeping their ids, and reports what it could not read', async () => {
+    const { folder, files } = memoryFolder();
+    await setup(folder);
+    const bundle = JSON.parse(serializeBundle('Shared', [preset('A'), preset('B')], '2026-10-01T00:00:00.000Z'));
+    delete bundle.presets[1].params.mix;
+
+    await library.getState().importFiles([
+      importFile('c.ccpreset.json', serializePreset(preset('C'))),
+      importFile('shared.ccbundle.json', JSON.stringify(bundle)),
+      importFile('notes.json', '{}'),
+      importFile('tape.cleanbundle.json', JSON.stringify({ format: 'clean-bundle', schemaVersion: 1, presets: [] })),
+    ]);
+
+    expect(library.getState().presets.map((p) => [p.preset.name, p.preset.id])).toEqual([
+      ['A', 'id-A'],
+      ['B', 'id-B'],
+      ['C', 'id-C'],
+    ]);
+    expect(presetIn(files, 'a.ccpreset.json')).toEqual(preset('A'));
+    expect(library.getState().importReport).toEqual({
+      added: 3,
+      replaced: 0,
+      keptBoth: 0,
+      skipped: 0,
+      problems: [
+        `shared.ccbundle.json: B: mix missing: set to ${PARAMS.mix.default}`,
+        'notes.json: Not a Preset or Bundle file',
+        'tape.cleanbundle.json: This is a Clean Bundle, open it in the Clean editor',
+      ],
+    });
+    expect(library.getState().conflicts).toEqual([]);
+  });
+
+  it('skips a Preset identical to one already in the Library, whatever its dates', async () => {
+    const shimmer = preset('Shimmer Tape', { tilt: 20 });
+    const { folder, files } = memoryFolder({ 's.ccpreset.json': serializePreset(shimmer) });
+    await setup(folder);
+
+    await library
+      .getState()
+      .importFiles([importFile('s.ccpreset.json', serializePreset({ ...shimmer, modifiedAt: '2026-10-06T00:00:00.000Z' }))]);
+
+    expect(Object.keys(files)).toEqual(['s.ccpreset.json']);
+    expect(library.getState().importReport).toMatchObject({ added: 0, skipped: 1 });
+    expect(library.getState().conflicts).toEqual([]);
+  });
+
+  it('skips a second Preset with the same id in one import', async () => {
+    await setup(memoryFolder().folder);
+
+    await library
+      .getState()
+      .importFiles([importFile('x.ccbundle.json', serializeBundle('X', [preset('A', {}, 'same'), preset('B', {}, 'same')], ''))]);
+
+    expect(library.getState().presets.map((p) => p.preset.name)).toEqual(['A']);
+    expect(library.getState().importReport?.problems).toEqual(['x.ccbundle.json: B: same id as A, skipped']);
+  });
+
+  it('asks about a different Preset with an id already in the Library, writing nothing until answered', async () => {
+    const shimmer = preset('Shimmer Tape', { tilt: 20 });
+    const { folder, files } = memoryFolder({ 's.ccpreset.json': serializePreset(shimmer) });
+    await setup(folder);
+    const incoming = { ...shimmer, name: 'Glass Choir', params: { ...shimmer.params, tilt: 99 } };
+
+    await library.getState().importFiles([importFile('g.ccpreset.json', serializePreset(incoming))]);
+
+    expect(library.getState().conflicts).toEqual([{ incoming, existing: shimmer }]);
+    expect(Object.keys(files)).toEqual(['s.ccpreset.json']);
+  });
+
+  it('counts different tags as a different Preset', async () => {
+    const shimmer = preset('Shimmer Tape');
+    await setup(memoryFolder({ 's.ccpreset.json': serializePreset(shimmer) }).folder);
+    const incoming = { ...shimmer, tags: ['ambient'] };
+
+    await library.getState().importFiles([importFile('s.ccpreset.json', serializePreset(incoming))]);
+
+    expect(library.getState().conflicts).toEqual([{ incoming, existing: shimmer }]);
+  });
+
+  it('Replace writes over the Preset, keeping its id so Slot Map links survive', async () => {
+    const shimmer = preset('Shimmer Tape', { tilt: 20 });
+    const { folder, files } = memoryFolder({ 'shimmer-tape.ccpreset.json': serializePreset(shimmer) });
+    await setup(folder);
+    await library.getState().openPreset(shimmer.id);
+    const incoming = { ...shimmer, name: 'Glass Choir', params: { ...shimmer.params, tilt: 99 } };
+    await library.getState().importFiles([importFile('g.ccpreset.json', serializePreset(incoming))]);
+
+    await library.getState().resolveConflicts('replace', false);
+
+    expect(Object.keys(files)).toEqual(['glass-choir.ccpreset.json']);
+    expect(presetIn(files, 'glass-choir.ccpreset.json')).toEqual(incoming);
+    expect(library.getState().importReport).toMatchObject({ added: 0, replaced: 1 });
+    expect(library.getState().conflicts).toEqual([]);
+    expect(library.getState().presets[0]?.preset.id).toBe(shimmer.id);
+    // The Working State came from the old version: it now shows as modified from the new one.
+    expect(workingLabel()).toBe('Glass Choir •');
+  });
+
+  it('adds a Preset deleted while the question waited, whatever the answer', async () => {
+    const shimmer = preset('Shimmer Tape', { tilt: 20 });
+    await setup(memoryFolder({ 'shimmer-tape.ccpreset.json': serializePreset(shimmer) }).folder);
+    const incoming = { ...shimmer, params: { ...shimmer.params, tilt: 99 } };
+    await library.getState().importFiles([importFile('s.ccpreset.json', serializePreset(incoming))]);
+    await library.getState().deletePreset(shimmer.id);
+
+    await library.getState().resolveConflicts('replace', false);
+
+    expect(library.getState().presets.map((p) => p.preset)).toEqual([incoming]);
+    expect(library.getState().importReport).toMatchObject({ added: 1, replaced: 0 });
+  });
+
+  it('Keep Both adds the incoming Preset with a new id', async () => {
+    const shimmer = preset('Shimmer Tape', { tilt: 20 });
+    await setup(memoryFolder({ 'shimmer-tape.ccpreset.json': serializePreset(shimmer) }).folder);
+    const incoming = { ...shimmer, params: { ...shimmer.params, tilt: 99 } };
+    await library.getState().importFiles([importFile('s.ccpreset.json', serializePreset(incoming))]);
+
+    await library.getState().resolveConflicts('keepBoth', false);
+
+    expect(library.getState().presets.map((p) => [p.preset.id, p.preset.params.tilt, p.fileName])).toEqual([
+      [shimmer.id, 20, 'shimmer-tape.ccpreset.json'],
+      ['new-1', 99, 'shimmer-tape-2.ccpreset.json'],
+    ]);
+    expect(library.getState().importReport).toMatchObject({ keptBoth: 1 });
+  });
+
+  it('answers one conflict at a time, or all that are left at once', async () => {
+    const [a, b, c] = ['A', 'B', 'C'].map((name) => preset(name, { tilt: 20 }));
+    await setup(memoryFolder(Object.fromEntries([a, b, c].map((p) => [`${p!.name}.ccpreset.json`, serializePreset(p!)]))).folder);
+    const changed = [a, b, c].map((p) => ({ ...p!, params: { ...p!.params, tilt: 99 } }));
+    await library.getState().importFiles([importFile('x.ccbundle.json', serializeBundle('X', changed, ''))]);
+    expect(library.getState().conflicts.map((x) => x.incoming.name)).toEqual(['A', 'B', 'C']);
+
+    await library.getState().resolveConflicts('keepBoth', false);
+    expect(library.getState().conflicts.map((x) => x.incoming.name)).toEqual(['B', 'C']);
+    await library.getState().resolveConflicts('replace', true);
+
+    expect(library.getState().conflicts).toEqual([]);
+    expect(library.getState().importReport).toMatchObject({ replaced: 2, keptBoth: 1 });
+    expect(library.getState().presets.map((p) => [p.preset.name, p.preset.params.tilt])).toEqual([
+      ['A', 20],
+      ['A', 99],
+      ['B', 99],
+      ['C', 99],
+    ]);
+  });
+
+  it('round-trips a whole Library through a Bundle', async () => {
+    const presets = [preset('A', { tilt: 1 }), { ...preset('B', { mix: 90 }), notes: 'Wide', tags: ['pad'] }];
+    await setup(memoryFolder(Object.fromEntries(presets.map((p) => [`${p.name}.json`, serializePreset(p)]))).folder);
+    library.getState().exportBundle();
+
+    await setup(memoryFolder().folder);
+    await library.getState().importFiles([importFile('b.ccbundle.json', downloads[0]!.text)]);
+
+    expect(library.getState().presets.map((p) => p.preset)).toEqual(presets);
+  });
+});
+
+describe('the backup reminder', () => {
+  const day = 24 * 60 * 60 * 1000;
+  const at = (ms: number) => new Date(Date.UTC(2026, 9, 5) + ms).toISOString();
+
+  it('is due for a browser storage Library with Presets that was never backed up, or not for a while', async () => {
+    const { folder } = memoryFolder({ 'a.json': serializePreset(preset('A')) });
+    library = createLibraryStore(editor, deps(null, folder));
+    await library.getState().openBrowserStorage();
+
+    expect(backupDue(library.getState(), at(0))).toBe(true);
+    library.getState().exportBundle();
+    const backedUp = Date.parse(library.getState().backupCheckedAt!) - Date.UTC(2026, 9, 5);
+    expect(backupDue(library.getState(), at(backedUp + (BACKUP_INTERVAL_DAYS * day - 1)))).toBe(false);
+    expect(backupDue(library.getState(), at(backedUp + BACKUP_INTERVAL_DAYS * day))).toBe(true);
+  });
+
+  it('"Later" puts it off for the same interval', async () => {
+    const { folder } = memoryFolder({ 'a.json': serializePreset(preset('A')) });
+    library = createLibraryStore(editor, deps(null, folder));
+    await library.getState().openBrowserStorage();
+
+    library.getState().snoozeBackup();
+
+    expect(backupCheckedAt).toBe(library.getState().backupCheckedAt);
+    expect(backupDue(library.getState(), library.getState().backupCheckedAt!)).toBe(false);
+  });
+
+  it('remembers the last backup across launches', async () => {
+    backupCheckedAt = at(0);
+    const { folder } = memoryFolder({ 'a.json': serializePreset(preset('A')) });
+    library = createLibraryStore(editor, deps(null, folder));
+    await library.getState().openBrowserStorage();
+
+    expect(backupDue(library.getState(), at(day))).toBe(false);
+  });
+
+  it('is never due for an empty Library or a folder on disk', async () => {
+    library = createLibraryStore(editor, deps(null));
+    await library.getState().openBrowserStorage();
+    expect(backupDue(library.getState(), at(0))).toBe(false);
+
+    await setup(memoryFolder({ 'a.json': serializePreset(preset('A')) }).folder);
+    expect(backupDue(library.getState(), at(0))).toBe(false);
   });
 });

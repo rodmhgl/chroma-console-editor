@@ -1,6 +1,16 @@
 import { create } from 'zustand';
 import type { PresetParamId } from '../midi/map';
-import { PRESET_EXTENSION, parsePreset, presetName, presetTags, serializePreset, type Preset } from '../model/schema';
+import {
+  BUNDLE_EXTENSION,
+  PRESET_EXTENSION,
+  parseLibraryFile,
+  parsePreset,
+  presetName,
+  presetTags,
+  serializeBundle,
+  serializePreset,
+  type Preset,
+} from '../model/schema';
 import { defaultWorkingState, type WorkingState } from '../model/state';
 import { isChangedSinceCommit, slotName, type SlotMap, type SlotMapEntry } from '../model/slotMap';
 import { useEditorStore, type createEditorStore } from './editorStore';
@@ -58,13 +68,55 @@ export type LibraryDeps = {
   now(): string;
   /** A fresh Preset id (UUID). */
   newId(): string;
+  /** Hands a file to the browser to save (Export). */
+  download(fileName: string, text: string): void;
+  /** When the user last backed up the Library or chose "Later": an ISO string, kept across launches. */
+  backupLog: { load(): string | null; save(at: string): void };
 };
+
+/** A Preset being imported whose id is already in the Library, with different contents. */
+export type ImportConflict = { incoming: Preset; existing: Preset };
+
+/** How Import is going. A Preset whose id is already in the Library with the same contents is skipped. */
+export type ImportReport = { added: number; replaced: number; keptBoth: number; skipped: number; problems: string[] };
+
+/** A file the user picked to import. */
+export type ImportFile = { name: string; text: string };
+
+/** Replace keeps the Library's id, so Slot Map links survive; Keep Both gives the incoming Preset a new one. */
+export type ConflictChoice = 'replace' | 'keepBoth';
 
 /** A Preset's details as the user types them: tags as one comma-separated line. */
 export type PresetDetails = { name: string; notes: string; tags: string };
 
 /** The browser storage Library's name, where a folder Library shows the folder's. */
 export const BROWSER_STORAGE_NAME = 'Browser storage';
+
+/** A browser storage Library asks to be backed up again this many days after its last backup (or "Later"). */
+export const BACKUP_INTERVAL_DAYS = 7;
+
+/**
+ * Whether to remind the user to back up: only a browser storage Library, which a cleared browser loses, and only
+ * one with Presets in it.
+ */
+export function backupDue(
+  library: { storage: LibraryStorage | null; presets: LibraryEntry[]; backupCheckedAt: string | null },
+  now: string,
+): boolean {
+  if (library.storage !== 'browser' || library.presets.length === 0) return false;
+  if (!library.backupCheckedAt) return true;
+  return Date.parse(now) - Date.parse(library.backupCheckedAt) >= BACKUP_INTERVAL_DAYS * 24 * 60 * 60 * 1000;
+}
+
+const EMPTY_IMPORT_REPORT: ImportReport = { added: 0, replaced: 0, keptBoth: 0, skipped: 0, problems: [] };
+
+/** Same name, notes, tags and params: Import skips it. Dates don't count, so a re-exported Preset is still identical. */
+const sameContents = (a: Preset, b: Preset) =>
+  a.name === b.name &&
+  a.notes === b.notes &&
+  a.tags.length === b.tags.length &&
+  a.tags.every((t, i) => t === b.tags[i]) &&
+  (Object.keys(a.params) as PresetParamId[]).every((id) => a.params[id] === b.params[id]);
 
 /**
  * What the Working State was opened from or last saved as. `presetId` is null for a Working State that
@@ -97,6 +149,12 @@ type LibraryStore = {
   /** Files skipped or changed on load, one line each. */
   problems: string[];
   source: WorkingSource;
+  /** When the user last backed up the Library or chose "Later". */
+  backupCheckedAt: string | null;
+  /** The last Import's outcome, until dismissed. */
+  importReport: ImportReport | null;
+  /** Imported Presets waiting for Replace or Keep Both, oldest first. */
+  conflicts: ImportConflict[];
   /** Asks the user for a folder, opens it and remembers it for the next launch. */
   pickFolder(): Promise<void>;
   /** At launch: opens the folder picked at an earlier launch if the browser still allows it, without asking. */
@@ -105,6 +163,20 @@ type LibraryStore = {
   reopenFolder(): Promise<void>;
   /** Opens the Library kept in browser storage, for browsers that can't open a folder. */
   openBrowserStorage(): Promise<void>;
+  /** Hands a Preset to the browser to save as a Preset file. */
+  exportPreset(id: string): void;
+  /** Hands every Preset to the browser to save as one Bundle. This is the Library's backup. */
+  exportBundle(): void;
+  /** Puts off the backup reminder. */
+  snoozeBackup(): void;
+  /**
+   * Adds the Presets in Preset and Bundle files, keeping their ids. One already in the Library is skipped if
+   * identical, otherwise it waits in `conflicts` for `resolveConflicts`.
+   */
+  importFiles(files: ImportFile[]): Promise<void>;
+  /** Answers the first waiting conflict, or with `applyToAll` every one left. */
+  resolveConflicts(choice: ConflictChoice, applyToAll: boolean): Promise<void>;
+  dismissImportReport(): void;
   /** Writes the Working State as a new Preset, keeping its Preset's notes and tags; the Working State then belongs to it. */
   saveAs(name: string): Promise<void>;
   /** Makes a Preset the Working State and sends it. The UI warns first when that discards unsaved edits. */
@@ -260,7 +332,7 @@ export function createLibraryStore(editor: EditorStoreApi, deps: LibraryDeps) {
       folder = opened;
       unopened = null;
       const folderName = storage === 'browser' ? BROWSER_STORAGE_NAME : opened.name;
-      set({ storage, folderName, remembered: null, ...contents });
+      set({ storage, folderName, remembered: null, importReport: null, conflicts: [], ...contents });
     };
     /** Opens the remembered folder if the browser allows it, asking the user first if `ask`. */
     const openRemembered = async (picked: PickedFolder, ask: boolean) => {
@@ -291,6 +363,35 @@ export function createLibraryStore(editor: EditorStoreApi, deps: LibraryDeps) {
       set({ source });
       await editor.getState().loadWorking(source.params);
     };
+    const recordBackupCheck = () => {
+      const at = deps.now();
+      deps.backupLog.save(at);
+      set({ backupCheckedAt: at });
+      return at;
+    };
+    const updateReport = (change: Partial<Record<Exclude<keyof ImportReport, 'problems'>, number>>) => {
+      const next = { ...(get().importReport ?? EMPTY_IMPORT_REPORT) };
+      for (const [key, n] of Object.entries(change) as [keyof typeof change, number][]) next[key] += n;
+      set({ importReport: next });
+    };
+    const resolve = async ({ incoming, existing }: ImportConflict, choice: ConflictChoice) => {
+      const old = get().presets.find((p) => p.preset.id === existing.id);
+      if (!old) {
+        // Deleted while the question waited: nothing left to replace or keep both of.
+        await addFile(incoming);
+        updateReport({ added: 1 });
+        return;
+      }
+      if (choice === 'keepBoth') {
+        await addFile({ ...incoming, id: deps.newId() });
+        updateReport({ keptBoth: 1 });
+        return;
+      }
+      await replace(old, incoming);
+      // Compared against the Preset as it is now, as after a Slot recall.
+      if (get().source.presetId === incoming.id) set({ source: sourceOf(incoming) });
+      updateReport({ replaced: 1 });
+    };
 
     return {
       storage: null,
@@ -299,6 +400,9 @@ export function createLibraryStore(editor: EditorStoreApi, deps: LibraryDeps) {
       presets: [],
       problems: [],
       source: { presetId: null, name: UNTITLED, params: editor.getState().editor.working },
+      backupCheckedAt: deps.backupLog.load(),
+      importReport: null,
+      conflicts: [],
       async pickFolder() {
         const picked = await deps.pickFolder();
         if (!picked) return;
@@ -321,6 +425,60 @@ export function createLibraryStore(editor: EditorStoreApi, deps: LibraryDeps) {
       },
       async openBrowserStorage() {
         await open(await deps.openBrowserStorage(), 'browser');
+      },
+      exportPreset(id) {
+        const { preset } = entry(id);
+        deps.download(presetFileName(preset.name, []), serializePreset(preset));
+      },
+      exportBundle() {
+        const name = get().folderName ?? 'Library';
+        const at = recordBackupCheck();
+        const presets = get().presets.map((p) => p.preset);
+        deps.download(`${slugOf(name, 'library')}-${at.slice(0, 10)}${BUNDLE_EXTENSION}`, serializeBundle(name, presets, at));
+      },
+      snoozeBackup() {
+        recordBackupCheck();
+      },
+      async importFiles(files) {
+        await openFolder();
+        set({ importReport: EMPTY_IMPORT_REPORT });
+        const problems: string[] = [];
+        /** Each Preset read so far in this import, by id. */
+        const seen = new Map<string, Preset>();
+        const conflicts: ImportConflict[] = [];
+        for (const file of files) {
+          const result = parseLibraryFile(file.text);
+          if (!result.ok) {
+            problems.push(`${file.name}: ${result.error}`);
+            continue;
+          }
+          problems.push(...result.problems.map((p) => `${file.name}: ${p}`));
+          for (const preset of result.presets) {
+            const twin = seen.get(preset.id);
+            if (twin) {
+              problems.push(`${file.name}: ${preset.name}: same id as ${twin.name}, skipped`);
+              continue;
+            }
+            seen.set(preset.id, preset);
+            const existing = get().presets.find((p) => p.preset.id === preset.id)?.preset;
+            if (!existing) {
+              await addFile(preset);
+              updateReport({ added: 1 });
+            } else if (sameContents(existing, preset)) updateReport({ skipped: 1 });
+            else conflicts.push({ incoming: preset, existing });
+          }
+        }
+        set({ importReport: { ...get().importReport!, problems }, conflicts: [...get().conflicts, ...conflicts] });
+      },
+      async resolveConflicts(choice, applyToAll) {
+        const [first, ...rest] = get().conflicts;
+        if (!first) return;
+        const answering = applyToAll ? [first, ...rest] : [first];
+        set({ conflicts: applyToAll ? [] : rest });
+        for (const conflict of answering) await resolve(conflict, choice);
+      },
+      dismissImportReport() {
+        set({ importReport: null });
       },
       async saveAs(input) {
         const name = validName(input);
@@ -516,6 +674,37 @@ const indexedDbRememberedFolder: LibraryDeps['rememberedFolder'] = {
   },
 };
 
+/** Saves a file through the browser's usual download. */
+function downloadFile(fileName: string, text: string) {
+  const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = fileName;
+  link.click();
+  // Revoked later, as some browsers start the download only after `click` returns.
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+const BACKUP_KEY = 'chroma-library-backup-checked-at';
+
+/** Kept in localStorage; any failure (a private window, blocked storage) only means the reminder shows again. */
+const localBackupLog: LibraryDeps['backupLog'] = {
+  load() {
+    try {
+      return localStorage.getItem(BACKUP_KEY);
+    } catch {
+      return null;
+    }
+  },
+  save(at) {
+    try {
+      localStorage.setItem(BACKUP_KEY, at);
+    } catch {
+      // Nothing to do: see above.
+    }
+  },
+};
+
 /** Runs one request on the remembered folder's store; any failure resolves undefined. */
 async function inFolderStore(mode: IDBTransactionMode, request: (store: IDBObjectStore) => IDBRequest): Promise<unknown> {
   try {
@@ -531,6 +720,8 @@ export const useLibraryStore = createLibraryStore(useEditorStore, {
   now: () => new Date().toISOString(),
   newId: () => crypto.randomUUID(),
   rememberedFolder: indexedDbRememberedFolder,
+  download: downloadFile,
+  backupLog: localBackupLog,
 });
 
 // Without folder access the Library is always the browser's own, so it opens with the app. With it, the folder picked

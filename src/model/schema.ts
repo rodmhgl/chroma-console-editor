@@ -8,6 +8,11 @@ export const PRESET_FORMAT = 'chroma-console-preset';
 /** Preset files end in this; only the `format` inside decides what a file is. */
 export const PRESET_EXTENSION = '.ccpreset.json';
 
+/** A Bundle: full copies of several Presets in one file, for sharing or backup. */
+export const BUNDLE_FORMAT = 'chroma-console-bundle';
+
+export const BUNDLE_EXTENSION = '.ccbundle.json';
+
 /** Another pedal's file is refused, never loaded best-effort: it would come out an all-defaults Preset (ADR 0002). */
 const OTHER_PEDALS: Record<string, string> = {
   'clean-preset': 'This is a Clean Preset, open it in the Clean editor',
@@ -44,7 +49,7 @@ export function serializePreset(preset: Preset): string {
   return `${JSON.stringify(presetFile(preset), null, 2)}\n`;
 }
 
-/** A Preset as the object its file holds. */
+/** A Preset as the object its file holds; a Bundle embeds the same object. */
 function presetFile(preset: Preset) {
   return {
     format: PRESET_FORMAT,
@@ -58,6 +63,19 @@ function presetFile(preset: Preset) {
     modifiedAt: preset.modifiedAt,
     params: Object.fromEntries(PRESET_PARAMS.map((p) => [p.id, preset.params[p.id as PresetParamId]])),
   };
+}
+
+/** A Bundle file: envelope first, then each Preset in full, keeping its id. No Slot numbers and no id of its own. */
+export function serializeBundle(name: string, presets: Preset[], exportedAt: string): string {
+  const file = {
+    format: BUNDLE_FORMAT,
+    schemaVersion: SCHEMA_VERSION,
+    appVersion: __APP_VERSION__,
+    name,
+    exportedAt,
+    presets: presets.map(presetFile),
+  };
+  return `${JSON.stringify(file, null, 2)}\n`;
 }
 
 /** A Preset name is trimmed, non-empty and at most this long; it need not be unique. */
@@ -94,6 +112,39 @@ export function parsePreset(text: string): ParseResult {
   return file === undefined ? { ok: false, error: 'Not a Preset file' } : readPreset(file);
 }
 
+export type LibraryFileResult = { ok: true; presets: Preset[]; problems: string[] } | { ok: false; error: string };
+
+/**
+ * Reads an imported file, a Preset or a Bundle as its `format` says. A broken Preset inside a Bundle is skipped
+ * and reported, with every warning, by the Preset's name or else its position. Each Preset in a Bundle carries its
+ * own `schemaVersion` and is migrated on its own.
+ */
+export function parseLibraryFile(text: string): LibraryFileResult {
+  const file = parseJson(text);
+  const otherPedal = otherPedalError(file);
+  if (otherPedal) return { ok: false, error: otherPedal };
+  if (isObject(file) && file.format === PRESET_FORMAT) {
+    const result = readPreset(file);
+    return result.ok ? { ok: true, presets: [result.preset], problems: result.warnings } : result;
+  }
+  if (!isObject(file) || file.format !== BUNDLE_FORMAT) return { ok: false, error: 'Not a Preset or Bundle file' };
+  const versionError = schemaVersionError(file.schemaVersion);
+  if (versionError) return { ok: false, error: versionError };
+  if (!Array.isArray(file.presets)) return { ok: false, error: 'Missing presets' };
+  const presets: Preset[] = [];
+  const problems: string[] = [];
+  file.presets.forEach((item: unknown, i) => {
+    const result = readPreset(item);
+    if (!result.ok) {
+      problems.push(`Preset ${i + 1}: ${result.error}`);
+      return;
+    }
+    presets.push(result.preset);
+    problems.push(...result.warnings.map((w) => `${result.preset.name}: ${w}`));
+  });
+  return { ok: true, presets, problems };
+}
+
 function parseJson(text: string): unknown {
   try {
     return JSON.parse(text);
@@ -111,7 +162,7 @@ function schemaVersionError(schemaVersion: unknown): string | null {
   return null;
 }
 
-/** A Preset from its file object. */
+/** A Preset from its file object, whether a file of its own or inside a Bundle. */
 function readPreset(file: unknown): ParseResult {
   const otherPedal = otherPedalError(file);
   if (otherPedal) return { ok: false, error: otherPedal };

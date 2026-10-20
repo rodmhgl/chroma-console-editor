@@ -1376,6 +1376,34 @@ button:disabled {
   padding-left: 16px;
 }
 
+.library-exchange {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.library-reminder {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--warning);
+  font: 500 11px var(--font-mono);
+}
+
+.library-apply-all {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.library-import-report {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
 .preset-list {
   margin: 0;
   padding: 0;
