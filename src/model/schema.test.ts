@@ -38,7 +38,7 @@ describe('serializePreset', () => {
       'params',
     ]);
     expect(file.format).toBe('chroma-console-preset');
-    expect(file.schemaVersion).toBe(2);
+    expect(file.schemaVersion).toBe(3);
     expect(typeof file.appVersion).toBe('string');
     expect(file.tags).toEqual(['ambient', 'pad']);
     expect(Object.keys(file.params).slice(0, 5)).toEqual([
@@ -68,11 +68,21 @@ describe('parsePreset', () => {
 
 describe('parsePreset migrates', () => {
   it('a schema 1 file, written before Module Order, to the default Module Order without a warning', () => {
-    const file = JSON.parse(serializePreset({ ...shimmer, params: { ...shimmer.params, moduleOrder: 0 } }));
-    delete file.params.moduleOrder;
+    const defaults = { moduleOrder: 0, dualBypassModules: 0b1111, expressionTarget: 0 };
+    const file = JSON.parse(serializePreset({ ...shimmer, params: { ...shimmer.params, ...defaults } }));
+    for (const id of Object.keys(defaults)) delete file.params[id];
     const result = parsePreset(JSON.stringify({ ...file, schemaVersion: 1 }));
 
-    expect(result).toEqual({ ok: true, preset: { ...shimmer, params: { ...shimmer.params, moduleOrder: 0 } }, warnings: [] });
+    expect(result).toEqual({ ok: true, preset: { ...shimmer, params: { ...shimmer.params, ...defaults } }, warnings: [] });
+  });
+
+  it('a schema 2 file, written before Dual Bypass and the expression target, to all Modules and none without a warning', () => {
+    const file = JSON.parse(serializePreset({ ...shimmer, params: { ...shimmer.params, dualBypassModules: 0b1111, expressionTarget: 0 } }));
+    delete file.params.dualBypassModules;
+    delete file.params.expressionTarget;
+    const result = parsePreset(JSON.stringify({ ...file, schemaVersion: 2 }));
+
+    expect(result).toEqual({ ok: true, preset: { ...shimmer, params: { ...shimmer.params, dualBypassModules: 0b1111, expressionTarget: 0 } }, warnings: [] });
   });
 });
 
@@ -114,7 +124,7 @@ describe('parsePreset rejects', () => {
   });
 
   it('a file made by a newer version, rather than loading it best-effort', () => {
-    expect(parse({ ...valid(), schemaVersion: 3 })).toEqual({
+    expect(parse({ ...valid(), schemaVersion: 4 })).toEqual({
       ok: false,
       error: 'Made by a newer version of the editor, please update',
     });

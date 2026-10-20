@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { defaultWorkingState } from '../model/state';
-import { EFFECT_COLOURS, PARAMS, readControl, type EffectParamId } from './map';
+import { EFFECT_COLOURS, PARAMS, moduleSetMask, pedalStep, readControl, type EffectParamId } from './map';
 
 const working = (changes: Partial<ReturnType<typeof defaultWorkingState>> = {}) => ({ ...defaultWorkingState(), ...changes });
 
@@ -54,5 +54,54 @@ describe('Effect Colour', () => {
     expect(colours('movementEffect')).toEqual({ doubler: 'red', vibrato: 'yellow', phaser: 'green', tremolo: 'blue', pitch: 'purple' });
     expect(colours('diffusionEffect')).toEqual({ cascade: 'red', reels: 'yellow', space: 'green', collage: 'blue', reverse: 'purple' });
     expect(colours('textureEffect')).toEqual({ filter: 'red', squash: 'yellow', cassette: 'green', broken: 'blue', interference: 'purple' });
+  });
+});
+
+describe('pedalStep', () => {
+  /** Each move as its action, the controls it moves and those held from before it. */
+  const moves = (step: ReturnType<typeof pedalStep>) => step.moves.map((m) => [m.action, m.controls.join('+'), m.holding?.join('+') ?? '']);
+
+  it('sets the Dual Bypass module set by holding BYPASS in FX Setup and making each Module’s button blink or not', () => {
+    const step = pedalStep('dualBypassModules', working({ dualBypassModules: moduleSetMask(['movement', 'diffusion']) }));
+
+    expect(step.title).toBe('Set the Dual Bypass module set');
+    expect(moves(step)).toEqual([
+      ['press', 'a+d', ''],
+      ['hold', 'bypass', ''],
+      ['press', 'a', 'bypass'],
+      ['press', 'b', 'bypass'],
+      ['press', 'c', 'bypass'],
+      ['press', 'd', 'bypass'],
+      ['press', 'a+d', ''],
+    ]);
+    // The pedal shows each Module's state, so the step reads it rather than trusting what the editor last confirmed.
+    expect(step.moves[2]!.text).toBe('Make A (Character) solid: tap it if it is blinking.');
+    expect(step.moves[3]!.text).toBe('Make B (Movement) blink: tap it if it is solid.');
+    expect(step.moves[6]!.text).toMatch(/^Release BYPASS, then press A and D together/);
+  });
+
+  it('maps the expression pedal by moving it in FX Setup, then the target knob', () => {
+    const movementAmount = PARAMS.expressionTarget.choices.find((c) => c.id === 'movementAmount')!.value;
+    const step = pedalStep('expressionTarget', working({ expressionTarget: movementAmount }));
+
+    expect(step.title).toBe('Set the expression target');
+    expect(moves(step)).toEqual([
+      ['press', 'a+d', ''],
+      ['move', 'expression', ''],
+      ['move', 'movementAmount', ''],
+      ['press', 'a+d', ''],
+    ]);
+    expect(step.moves[2]!.text).toMatch(/^Move the Movement Amount knob\./);
+  });
+
+  it('lets the expression mapping menu time out without a knob moved, for no expression target', () => {
+    const step = pedalStep('expressionTarget', working());
+
+    expect(moves(step)).toEqual([
+      ['press', 'a+d', ''],
+      ['move', 'expression', ''],
+      ['press', 'a+d', ''],
+    ]);
+    expect(step.moves[2]!.text).toMatch(/^Wait 3 seconds without moving a knob/);
   });
 });

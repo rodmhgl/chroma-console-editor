@@ -28,7 +28,7 @@ function otherPedalError(file: unknown): string | null {
 }
 
 /** Bump with a migration whenever a preset param is added, a param ID is renamed or what a value means changes (ADR 0002). */
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
 export type Preset = {
   /** The Preset's identity: survives Rename; New, Save As and Duplicate make a new one. */
@@ -203,6 +203,8 @@ function readPreset(file: unknown): ParseResult {
 const MIGRATIONS: ((params: Record<string, unknown>) => Record<string, unknown>)[] = [
   // 2: Module Order, a Pedal Step setting, joins the params.
   (params) => ({ ...params, moduleOrder: PARAMS.moduleOrder.default }),
+  // 3: The Dual Bypass module set and the expression target, Pedal Step settings, join the params.
+  (params) => ({ ...params, dualBypassModules: PARAMS.dualBypassModules.default, expressionTarget: PARAMS.expressionTarget.default }),
 ];
 
 /** A file's params brought up to `SCHEMA_VERSION`, one step at a time. */

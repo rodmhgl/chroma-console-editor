@@ -61,7 +61,7 @@ test('new, edit, save and reopen round-trip the Working State and the Virtual Pe
   const amount = Number(await character.getByRole('slider', { name: 'Amount' }).getAttribute('aria-valuenow'));
   expect(amount).toBeGreaterThan(64);
   const file = await readPresetFile(page, 'shimmer-tape.ccpreset.json');
-  expect(file).toMatchObject({ format: 'chroma-console-preset', schemaVersion: 2, name: 'Shimmer Tape', notes: '', tags: [] });
+  expect(file).toMatchObject({ format: 'chroma-console-preset', schemaVersion: 3, name: 'Shimmer Tape', notes: '', tags: [] });
   expect(file.params).toMatchObject({ characterEffect: 76, characterAmount: amount, diffusionEngaged: 0 });
 
   // New starts again from the neutral Preset, warning first that it discards the unsaved edit.

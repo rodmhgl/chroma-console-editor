@@ -143,3 +143,28 @@ The manual says to enter FX Setup (A and D) and "tap the buttons in your desired
   5. Save to a scratch Slot (B+C, scroll, B+C), recall another Slot then the scratch one with `PC`. Is the order saved with the Slot?
 - **Editor assumes:** buttons A, B, C and D are Character, Movement, Diffusion and Texture; the Pedal Step taps all four in the new order and the pedal then leaves FX Setup; Module Order is saved in a Slot.
 - **Result:** _not yet run_
+
+## 12. Clearing the expression mapping
+
+The manual says how to map the expression pedal to a knob in FX Setup, but not how to unmap it. The editor's Pedal Step for "no expression target" opens the expression mapping menu and lets it time out without moving a knob.
+
+- **Setup:** An expression pedal in the EXP jack. Reset, then `CC 67 = 0` (Movement Amount down) and `CC 17 = 32` (Movement → Vibrato), so the expression pedal is easy to hear on Movement Amount.
+- **Steps:**
+  1. Map the expression pedal to Movement Amount: press A and D, move the expression pedal, turn the Movement Amount knob, wait 3 seconds, press A and D. Sweep the expression pedal: does the vibrato deepen?
+  2. Press A and D, move the expression pedal, then wait 3 seconds without touching a knob, and press A and D. Sweep the expression pedal: does it still drive Movement Amount?
+  3. If it does, try resetting FX Setup (hold A and D until the blue pulse). Does that clear the mapping, and what else does it reset (Module Order, Dual Bypass, Filter style, Capture Routing)?
+- **Editor assumes:** step 2 leaves the expression pedal mapped to nothing; the mapping is saved in a Slot (manual §12).
+- **Result:** _not yet run_
+
+## 13. The Dual Bypass Pedal Step
+
+The manual says that in FX Setup, holding BYPASS lights the buttons yellow, blinking for a Module BYPASS bypasses and solid for one it leaves alone, and each tap toggles one. Can the set be empty, and does leaving FX Setup keep it?
+
+- **Setup:** Reset, then `CC 17 = 76` (Movement → Tremolo, easy to hear) and `CC 67 = 127`.
+- **Steps:**
+  1. Press A and D, then hold BYPASS. Are all four buttons blinking (the default)?
+  2. Still holding BYPASS, tap A, C and D so only B blinks. Release BYPASS, then press A and D. Press BYPASS once: does only the tremolo stop, the other Modules still sounding?
+  3. Repeat with all four solid. What does a single BYPASS press do: nothing, or bypass the whole pedal?
+  4. Save to a scratch Slot (B+C, scroll, B+C), recall another Slot then the scratch one with `PC`. Is the Dual Bypass set saved with the Slot?
+- **Editor assumes:** blinking is in the set and solid is not; buttons A to D are Character to Texture (hardware check 11); any set from none to all four can be saved; releasing BYPASS and pressing A and D leaves FX Setup with the set kept.
+- **Result:** _not yet run_
