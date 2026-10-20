@@ -1,12 +1,15 @@
 import { useState, type KeyboardEvent } from 'react';
 import {
   ENGAGED_PARAMS,
+  MODULE_IDS,
   MODULES,
   PARAMS,
   effectAt,
   fxSetupParams,
   isEngaged,
   moduleOrderAt,
+  moduleSetMask,
+  moduleSetOf,
   settingLabel,
   type EffectColour,
   type EffectParamId,
@@ -17,7 +20,7 @@ import { shownState } from '../../model/core';
 import { useEditorStore } from '../../store/editorStore';
 import { ChoicePicker, EffectPicker } from '../EffectPicker';
 import { ControlKnob } from '../Knob';
-import { PedalStepBadge } from '../PedalStepDiagram';
+import { PedalStepSetting } from '../PedalStepDiagram';
 
 /** What each Module's column holds: its Effect, its Amount, and the Secondary Controls the pedal hides behind a menu. */
 const COLUMNS: Record<ModuleId, { effect: EffectParamId; amount: LevelParamId; secondary: readonly LevelParamId[] }> = {
@@ -49,12 +52,11 @@ export function Modules() {
 
   return (
     <div className="modules-area">
-      <div className="module-order" role="group" aria-labelledby="module-order-label" title={MODULE_ORDER_HELP}>
-        <span id="module-order-label" className="module-order-label">
-          Module Order
-        </span>
-        <output>{settingLabel(PARAMS.moduleOrder, index)}</output>
-        <PedalStepBadge />
+      <div className="pedal-step-settings">
+        <PedalStepSetting id="moduleOrder" help={MODULE_ORDER_HELP}>
+          {() => <output>{settingLabel(PARAMS.moduleOrder, index)}</output>}
+        </PedalStepSetting>
+        <DualBypassModules />
       </div>
       <div className="modules">
         {order.map((module, position) => (
@@ -69,6 +71,31 @@ export function Modules() {
         ))}
       </div>
     </div>
+  );
+}
+
+/** Which Modules the BYPASS footswitch bypasses and engages, each toggled on or off. A Pedal Step setting: sends nothing. */
+function DualBypassModules() {
+  const set = moduleSetOf(useEditorStore((s) => shownState(s.editor).dualBypassModules));
+  const setParam = useEditorStore((s) => s.setParam);
+  const toggle = (module: ModuleId) =>
+    setParam('dualBypassModules', moduleSetMask(set.includes(module) ? set.filter((m) => m !== module) : [...set, module]));
+  return (
+    <PedalStepSetting id="dualBypassModules">
+      {() =>
+        MODULE_IDS.map((module) => (
+          <button
+            key={module}
+            type="button"
+            className={`module-set-toggle module-${module}`}
+            aria-pressed={set.includes(module)}
+            onClick={() => toggle(module)}
+          >
+            {MODULES[module]}
+          </button>
+        ))
+      }
+    </PedalStepSetting>
   );
 }
 

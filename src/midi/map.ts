@@ -61,6 +61,16 @@ export function moduleOrderOf(working: Readonly<Record<'moduleOrder', number>>):
   return moduleOrderAt(working.moduleOrder);
 }
 
+/** The Modules a 4-bit Module set holds, in button order: bit 0 is Character (A), bit 3 Texture (D). */
+export function moduleSetOf(mask: number): ModuleId[] {
+  return MODULE_IDS.filter((_, i) => mask & (1 << i));
+}
+
+/** The 4-bit mask of a Module set. */
+export function moduleSetMask(modules: readonly ModuleId[]): number {
+  return MODULE_IDS.reduce((mask, module, i) => (modules.includes(module) ? mask | (1 << i) : mask), 0);
+}
+
 /** A control whose meaning changes with its Module's Effect, named by the knob it is on the pedal. */
 export type ControlRole = 'amount' | 'tilt' | 'sensitivity' | 'rate' | 'time' | 'drift';
 
@@ -107,8 +117,9 @@ export type ParamDef = {
    * `continuous`: any of 0–127, sent as-is. `effect`: one of a Module's Effects, sent as the midpoint of its range.
    * `choice`: one of a few named settings, such as Engaged or Bypassed, each sent as its own value.
    * `moduleOrder`: one of the 24 orders of the four Modules, as a permutation index (see `moduleOrderOf`).
+   * `moduleSet`: any of the Modules, none to all four, as a 4-bit mask (see `moduleSetOf`).
    */
-  kind: 'continuous' | 'effect' | 'choice' | 'moduleOrder';
+  kind: 'continuous' | 'effect' | 'choice' | 'moduleOrder' | 'moduleSet';
   effects?: readonly EffectDef[];
   choices?: readonly ChoiceDef[];
   /** The Module the control drives: Tilt is Character's, as its red knob shows. Output Level drives the whole pedal. */
@@ -205,6 +216,34 @@ const FILTER_STYLES = [
 const CAPTURE_ROUTINGS = [
   { id: 'postFx', label: 'Post-FX', min: 0, max: 63, value: 0, help: 'The default: Capture records after the effects.' },
   { id: 'preFx', label: 'Pre-FX', min: 64, max: 127, value: 127, help: 'Capture records your dry signal before the effects, so the effects process the loop.' },
+] as const satisfies readonly ChoiceDef[];
+
+/** Each Primary Control by its param id, named in full: a knob's label alone says only "Amount". */
+const PRIMARY_CONTROL_NAMES = {
+  tilt: 'Tilt',
+  characterAmount: 'Character Amount',
+  rate: 'Rate',
+  movementAmount: 'Movement Amount',
+  time: 'Time',
+  diffusionAmount: 'Diffusion Amount',
+  mix: 'Mix',
+  textureAmount: 'Texture Amount',
+} as const;
+
+/**
+ * What the expression pedal drives: nothing, or one Primary Control, in pedal map order. MIDI can't reach it, so each
+ * value is the editor's own number for it.
+ */
+const EXPRESSION_TARGETS = [
+  { id: 'none', label: 'None', min: 0, max: 0, value: 0, help: 'The default: the expression pedal drives nothing.' },
+  { id: 'tilt', label: PRIMARY_CONTROL_NAMES.tilt, min: 1, max: 1, value: 1 },
+  { id: 'characterAmount', label: PRIMARY_CONTROL_NAMES.characterAmount, min: 2, max: 2, value: 2 },
+  { id: 'rate', label: PRIMARY_CONTROL_NAMES.rate, min: 3, max: 3, value: 3 },
+  { id: 'movementAmount', label: PRIMARY_CONTROL_NAMES.movementAmount, min: 4, max: 4, value: 4 },
+  { id: 'time', label: PRIMARY_CONTROL_NAMES.time, min: 5, max: 5, value: 5 },
+  { id: 'diffusionAmount', label: PRIMARY_CONTROL_NAMES.diffusionAmount, min: 6, max: 6, value: 6 },
+  { id: 'mix', label: PRIMARY_CONTROL_NAMES.mix, min: 7, max: 7, value: 7 },
+  { id: 'textureAmount', label: PRIMARY_CONTROL_NAMES.textureAmount, min: 8, max: 8, value: 8 },
 ] as const satisfies readonly ChoiceDef[];
 
 type LevelOptions = { module?: ModuleId; role?: ControlRole; default?: number; sides?: readonly [string, string] };
@@ -390,6 +429,31 @@ export const PARAMS = {
     help: 'The order the four Modules process the signal in. MIDI can’t set it: apply it on the pedal in FX Setup.',
     transport: 'pedalStep',
   },
+  dualBypassModules: {
+    id: 'dualBypassModules',
+    label: 'Dual Bypass',
+    kind: 'moduleSet',
+    group: 'pedalStep',
+    scope: 'preset',
+    min: 0,
+    max: 0b1111,
+    default: 0b1111,
+    help: 'The Modules the BYPASS footswitch bypasses and engages; by default all four. MIDI can’t set them: apply them on the pedal in FX Setup.',
+    transport: 'pedalStep',
+  },
+  expressionTarget: {
+    id: 'expressionTarget',
+    label: 'Expression target',
+    kind: 'choice',
+    choices: EXPRESSION_TARGETS,
+    group: 'pedalStep',
+    scope: 'preset',
+    min: 0,
+    max: EXPRESSION_TARGETS.length - 1,
+    default: 0,
+    help: 'The Primary Control an expression pedal in the EXP jack drives, if any. MIDI can’t set it: apply it on the pedal in FX Setup.',
+    transport: 'pedalStep',
+  },
 } as const satisfies Record<string, ParamDef>;
 
 export type ParamId = keyof typeof PARAMS;
@@ -425,8 +489,20 @@ export type LevelParamId = Exclude<CcParamId, EffectParamId | ChoiceParamId>;
 
 export const PEDAL_STEP_PARAMS = (Object.values(PARAMS) as ParamDef[]).filter((p) => p.transport === 'pedalStep').map((p) => p.id as PedalStepParamId);
 
-/** The pedal's four buttons, left to right, and its two footswitches, as the manual names them. */
-export const PEDAL_CONTROLS = { a: 'A', b: 'B', c: 'C', d: 'D', tap: 'TAP', bypass: 'BYPASS' } as const;
+/**
+ * The pedal's four buttons, left to right, its two footswitches, as the manual names them, then its eight Primary
+ * Control knobs, each named by its param id, and an expression pedal in its EXP jack.
+ */
+export const PEDAL_CONTROLS = {
+  a: 'A',
+  b: 'B',
+  c: 'C',
+  d: 'D',
+  tap: 'TAP',
+  bypass: 'BYPASS',
+  ...PRIMARY_CONTROL_NAMES,
+  expression: 'expression pedal',
+} as const;
 
 export type PedalControlId = keyof typeof PEDAL_CONTROLS;
 
@@ -435,9 +511,10 @@ export const MODULE_BUTTONS = { character: 'a', movement: 'b', diffusion: 'c', t
 
 /**
  * One move of a Pedal Step: pressing and releasing (`press`) or holding down (`hold`) one control, or several together
- * as a combination.
+ * as a combination, or moving a knob or the expression pedal (`move`). `holding` names controls held down by an earlier
+ * move and kept held through this one, such as BYPASS while tapping buttons.
  */
-export type PedalMove = { action: 'press' | 'hold'; controls: readonly PedalControlId[]; text: string };
+export type PedalMove = { action: 'press' | 'hold' | 'move'; controls: readonly PedalControlId[]; holding?: readonly PedalControlId[]; text: string };
 
 /** What the user does by hand on the pedal to apply a setting MIDI can't reach: moves made in sequence. */
 export type PedalStep = { title: string; moves: readonly PedalMove[] };
@@ -450,9 +527,54 @@ const enterFxSetup: PedalMove = {
   text: `Press ${controlNames(['a', 'd'])} together to enter FX Setup. The buttons show the current Module Order, then blink blue.`,
 };
 
+/** Leaves FX Setup from its main menu, once `first` is done; `note` follows the instruction. */
+const leaveFxSetup = (first: string, note?: string): PedalMove => ({
+  action: 'press',
+  controls: ['a', 'd'],
+  text: `${first}, then press ${controlNames(['a', 'd'])} together to leave FX Setup.${note ? ` ${note}` : ''}`,
+});
+
 /** The Pedal Step that applies `id`'s value from the Working State `working` (manual §11). */
 export function pedalStep(id: PedalStepParamId, working: Readonly<Record<PedalStepParamId, number>>): PedalStep {
   switch (id) {
+    case 'dualBypassModules': {
+      const set = moduleSetOf(working.dualBypassModules);
+      return {
+        title: 'Set the Dual Bypass module set',
+        moves: [
+          enterFxSetup,
+          {
+            action: 'hold',
+            controls: ['bypass'],
+            text: 'Press and hold BYPASS, and keep holding it. The buttons light yellow: blinking for a Module BYPASS bypasses, solid for one it leaves alone.',
+          },
+          // The pedal shows each Module's state, so the step reads it there rather than trusting what was last confirmed.
+          ...MODULE_IDS.map((module): PedalMove => {
+            const button = MODULE_BUTTONS[module];
+            const name = `${PEDAL_CONTROLS[button]} (${MODULES[module]})`;
+            const text = set.includes(module) ? `Make ${name} blink: tap it if it is solid.` : `Make ${name} solid: tap it if it is blinking.`;
+            return { action: 'press', controls: [button], holding: ['bypass'], text };
+          }),
+          leaveFxSetup('Release BYPASS'),
+        ],
+      };
+    }
+    case 'expressionTarget': {
+      const target = (choiceAt(PARAMS.expressionTarget, working.expressionTarget)?.id ?? 'none') as ChoiceId<'expressionTarget'>;
+      return {
+        title: 'Set the expression target',
+        moves: [
+          enterFxSetup,
+          { action: 'move', controls: ['expression'], text: 'Move the expression pedal to open the expression mapping menu.' },
+          ...(target === 'none'
+            ? [leaveFxSetup('Wait 3 seconds without moving a knob, for the menu to time out', 'Whether this clears an earlier mapping is unconfirmed (hardware check 12).')]
+            : [
+                { action: 'move', controls: [target], text: `Move the ${PEDAL_CONTROLS[target]} knob. The expression pedal now drives it.` } satisfies PedalMove,
+                leaveFxSetup('Wait 3 seconds for the menu to time out'),
+              ]),
+        ],
+      };
+    }
     case 'moduleOrder': {
       const order = moduleOrderOf(working);
       return {
@@ -520,6 +642,7 @@ export function choiceAt(param: ParamDef, value: number): ChoiceDef | undefined 
 export function settingLabel(param: ParamDef, value: number): string | undefined {
   if (param.kind === 'continuous') return undefined;
   if (param.kind === 'moduleOrder') return moduleOrderAt(value).map((m) => MODULES[m]).join(' → ');
+  if (param.kind === 'moduleSet') return moduleSetOf(value).map((m) => MODULES[m]).join(', ') || 'None';
   return choiceAt(param, value)?.label ?? 'OFF';
 }
 

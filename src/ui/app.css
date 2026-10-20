@@ -505,7 +505,13 @@ button:disabled {
   gap: 10px;
 }
 
-.module-order {
+.pedal-step-settings {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 28px;
+}
+
+.pedal-step-setting {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -514,11 +520,43 @@ button:disabled {
   color: var(--text-2);
 }
 
-.module-order-label {
+.pedal-step-setting-label {
   font: 600 10px var(--font-mono);
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--muted);
+}
+
+/* A Module in the Dual Bypass module set: filled in its Module Colour while included. */
+.module-set-toggle {
+  padding: 3px 8px;
+  border: 1px solid var(--border-soft);
+  border-radius: 5px;
+  background: transparent;
+  font: 600 11px var(--font-mono);
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.module-set-toggle[aria-pressed='true'] {
+  border-color: var(--module);
+  background: var(--module);
+  color: var(--on-module);
+}
+
+.module-set-toggle:focus-visible,
+.pedal-step-select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.pedal-step-select {
+  border: 1px solid var(--border-soft);
+  border-radius: 5px;
+  background: var(--card);
+  padding: 3px 6px;
+  font: 500 12px var(--font-mono);
+  color: var(--ink);
 }
 
 /* A setting MIDI can't reach: changing it on screen needs a Pedal Step to change the sound. */
@@ -691,7 +729,8 @@ button:disabled {
   stroke: var(--border-soft);
 }
 
-.pedal-face-control circle {
+.pedal-face-control circle,
+.pedal-face-control rect {
   fill: var(--card);
   stroke: var(--border-soft);
 }
@@ -701,19 +740,27 @@ button:disabled {
   fill: var(--muted);
 }
 
-.pedal-face-control text.is-footswitch {
+.pedal-face-control.is-footswitch text,
+.pedal-face-control.is-expression text {
   font-size: 4.5px;
 }
 
-.pedal-face-control.is-press circle,
-.pedal-face-control.is-hold circle {
+/* A knob's name sits under it, so it stays ink-coloured when the knob is lit. */
+.pedal-face-control.is-knob text {
+  font-size: 4px;
+}
+
+.pedal-face-control:is(.is-press, .is-hold, .is-move) :is(circle, rect) {
   fill: var(--accent);
   stroke: var(--ink);
 }
 
-.pedal-face-control.is-press text,
-.pedal-face-control.is-hold text {
+.pedal-face-control:is(.is-press, .is-hold, .is-move):not(.is-knob) text {
   fill: var(--card);
+}
+
+.pedal-face-control.is-knob.is-move text {
+  fill: var(--ink);
 }
 
 /* A hold keeps the control down: ringed as well as lit. */

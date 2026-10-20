@@ -31,6 +31,14 @@ _Avoid_: Off, on, enabled, active
 The sequence in which the four Modules process the signal; default Character → Movement → Diffusion → Texture.
 _Avoid_: Routing (ambiguous with MIDI Routing and Capture Routing)
 
+**Dual Bypass module set**:
+The Modules the BYPASS footswitch bypasses and engages, set per Preset in FX Setup; default all four.
+_Avoid_: Dual Bypass Modules, Dual Bypass selection
+
+**Expression target**:
+The one Primary Control an expression pedal drives, or none; set per Preset in FX Setup; default none.
+_Avoid_: Expression mapping, EXP assignment
+
 **Primary Control**:
 A parameter reached directly by a knob: Tilt, Rate, Time, Mix, and each Module's Amount.
 
@@ -100,7 +108,7 @@ How far the editor trusts that the pedal is sounding the Working State: In Sync,
 Transmitting every MIDI-reachable setting of the Working State to the pedal.
 
 **Pedal Step**:
-An instruction the user performs by hand on the pedal for something MIDI cannot reach: Module Order, Dual Bypass module selection, expression mapping, saving to a Slot.
+An instruction the user performs by hand on the pedal for something MIDI cannot reach: Module Order, Dual Bypass module set, expression target, saving to a Slot.
 _Avoid_: Manual step, instruction
 
 **Virtual Pedal**:

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CALIBRATION_LEVEL, PARAMS, PERFORMANCE_CONTROLS, moduleOrderOf, type ParamDef } from '../midi/map';
+import { CALIBRATION_LEVEL, PARAMS, PERFORMANCE_CONTROLS, moduleOrderOf, moduleSetMask, moduleSetOf, settingLabel, type ParamDef } from '../midi/map';
 import {
   dispatch,
   encodeSendAll,
@@ -98,7 +98,7 @@ const CALIBRATION_LEVELS = [
 ] as const;
 
 /** The settings MIDI can't reach, each covered by a no-bytes test of its own below. */
-const PEDAL_STEPS = ['moduleOrder'] as const;
+const PEDAL_STEPS = ['moduleOrder', 'dualBypassModules', 'expressionTarget'] as const;
 
 describe('the pedal map', () => {
   it('has a byte test below for every row, or a no-bytes test for a Pedal Step setting', () => {
@@ -358,6 +358,8 @@ describe('the initial Editor State', () => {
       filterStyle: 65,
       captureRouting: 0,
       moduleOrder: 0,
+      dualBypassModules: 0b1111,
+      expressionTarget: 0,
     });
     expect(unconfirmedPedalSteps(state)).toEqual([]);
   });
@@ -655,6 +657,83 @@ describe('Module Order, a Pedal Step setting', () => {
     for (const order of [['character', 'movement', 'diffusion'], ['character', 'character', 'diffusion', 'texture']] as const) {
       expect(dispatch(start, { type: 'setModuleOrder', order: [...order] }).state).toBe(start);
     }
+  });
+});
+
+describe('Dual Bypass module set, a Pedal Step setting', () => {
+  it('starts with every Module, as a 4-bit mask with a bit per Module in button order', () => {
+    const state = initialEditorState();
+
+    expect(state.working.dualBypassModules).toBe(0b1111);
+    expect(moduleSetOf(state.working.dualBypassModules)).toEqual(['character', 'movement', 'diffusion', 'texture']);
+    expect(moduleSetOf(0b0110)).toEqual(['movement', 'diffusion']);
+    expect(moduleSetMask(['texture', 'character'])).toBe(0b1001);
+  });
+
+  it('is any of the 16 sets, none included; anything past them is clamped', () => {
+    for (let mask = 0; mask < 16; mask++) {
+      expect(dispatch(initialEditorState(), { type: 'setParam', id: 'dualBypassModules', value: mask }).state.working.dualBypassModules).toBe(mask);
+    }
+    expect(dispatch(initialEditorState(), { type: 'setParam', id: 'dualBypassModules', value: 99 }).state.working.dualBypassModules).toBe(15);
+  });
+});
+
+describe('expression target, a Pedal Step setting', () => {
+  it('starts at none', () => {
+    expect(settingLabel(PARAMS.expressionTarget, initialEditorState().working.expressionTarget)).toBe('None');
+  });
+
+  it('is none or one of the 8 Primary Controls', () => {
+    const primaryControls = (Object.values(PARAMS) as ParamDef[]).filter((p) => p.group === 'primary').map((p) => p.id);
+
+    expect(PARAMS.expressionTarget.choices.map((c) => c.id)).toEqual(['none', ...primaryControls]);
+    expect(primaryControls).toHaveLength(8);
+    const { state } = dispatch(initialEditorState(), { type: 'selectChoice', id: 'expressionTarget', choice: 'movementAmount' });
+    expect(settingLabel(PARAMS.expressionTarget, state.working.expressionTarget)).toBe('Movement Amount');
+  });
+});
+
+describe.each([
+  ['dualBypassModules', 0b0110],
+  ['expressionTarget', 4],
+] as const)('%s, like every Pedal Step setting', (id, value) => {
+  const inSync = () => run(onMidiChannel5(), { type: 'outputConnected' }, { type: 'sendAllFinished' }).state;
+  const set = { type: 'setParam', id, value } as const;
+
+  it('sends no MIDI, and makes the Sync Status Possibly Stale until its Pedal Step is confirmed', () => {
+    const { state, messages } = dispatch(inSync(), set);
+
+    expect(messages).toEqual([]);
+    expect(state.working[id]).toBe(value);
+    expect(syncStatus(state)).toBe('possiblyStale');
+    expect(unconfirmedPedalSteps(state)).toEqual([id]);
+
+    const confirmed = dispatch(state, { type: 'confirmPedalStep', id });
+    expect(confirmed.messages).toEqual([]);
+    expect(syncStatus(confirmed.state)).toBe('inSync');
+  });
+
+  it('is never sent by Send All', () => {
+    const connected = dispatch(onMidiChannel5(), { type: 'outputConnected' }).state;
+    const sent = run(connected, set, { type: 'sendAllFinished' }).state;
+
+    expect(encodeSendAll(sent)).toEqual(encodeSendAll(onMidiChannel5()));
+    expect(syncStatus(sent)).toBe('possiblyStale');
+  });
+
+  it('undoes and redoes without sending anything', () => {
+    const undone = run(inSync(), set, { type: 'undo' });
+    expect(undone.messages).toEqual([]);
+    expect(syncStatus(undone.state)).toBe('inSync');
+
+    const redone = dispatch(undone.state, { type: 'redo' });
+    expect(redone.messages).toEqual([]);
+    expect(unconfirmedPedalSteps(redone.state)).toEqual([id]);
+  });
+
+  it('makes the Snapshot comparison inexact when the two differ', () => {
+    const state = run(inSync(), { type: 'takeSnapshot' }, set, { type: 'confirmPedalStep', id }).state;
+    expect(inexactPedalSteps(state)).toEqual([id]);
   });
 });
 
