@@ -1038,3 +1038,37 @@ describe('Snapshot A/B', () => {
     expect(shownState(recalled)).toEqual(edited().working);
   });
 });
+
+describe('restore', () => {
+  const working = { ...initialEditorState().working, tilt: 20, moduleOrder: 3 };
+  const session = {
+    working,
+    snapshot: { state: { ...working, mix: 40 }, showing: true },
+    slotMap: { 12: { committed: working, presetId: 'p-1', name: 'Shimmer' } },
+    confirmed: { moduleOrder: 3 },
+    midiChannel: 9,
+  };
+  const connected = () => dispatch(onMidiChannel5(), { type: 'outputConnected' }).state;
+
+  it('takes up what the last session left, sending nothing', () => {
+    const { state, messages } = dispatch(connected(), { type: 'restore', ...session });
+
+    const { midiChannel, ...rest } = session;
+    expect(state).toMatchObject({ ...rest, global: { midiChannel } });
+    expect(messages).toEqual([]);
+  });
+
+  it('is Possibly Stale even after Send All, since the pedal may have changed since, but stays Unknown with no output', () => {
+    const inSync = dispatch(connected(), { type: 'sendAllFinished' }).state;
+    expect(syncStatus(dispatch(inSync, { type: 'restore', ...session }).state)).toBe('possiblyStale');
+
+    expect(syncStatus(dispatch(onMidiChannel5(), { type: 'restore', ...session }).state)).toBe('unknown');
+  });
+
+  it('clears the undo history, whose steps belong to the state before it', () => {
+    const edited = dispatch(onMidiChannel5(), { type: 'setParam', id: 'tilt', value: 30 }).state;
+    const restored = dispatch(edited, { type: 'restore', ...session }).state;
+
+    expect(dispatch(restored, { type: 'undo' })).toEqual({ state: restored, messages: [] });
+  });
+});

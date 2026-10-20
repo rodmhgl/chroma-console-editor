@@ -233,3 +233,8 @@ function readParams(raw: Record<string, unknown>, warnings: string[]): WorkingSt
   for (const id of Object.keys(raw)) if (!known.has(id)) warnings.push(`Unknown param ${id} dropped`);
   return params;
 }
+
+/** A stored Working State read as a Preset file's params are, without the warnings: anything not an object reads as defaults. */
+export function readWorkingState(raw: unknown): WorkingState {
+  return readParams(isObject(raw) ? raw : {}, []);
+}

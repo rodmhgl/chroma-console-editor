@@ -9,6 +9,10 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { registerSW } from 'virtual:pwa-register';
 import { startApp, useAppStore } from './store/appStore';
+import { useEditorStore } from './store/editorStore';
+import { useLibraryStore } from './store/library';
+import { indexedDbSessionStorage, startSession } from './store/persistence';
+import { useSettingsStore } from './store/settingsStore';
 import { App } from './ui/App';
 import './ui/app.css';
 
@@ -23,8 +27,17 @@ startApp(useAppStore, {
   },
 });
 
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
-);
+const render = () =>
+  createRoot(document.getElementById('root')!).render(
+    <StrictMode>
+      <App />
+    </StrictMode>,
+  );
+
+// The last session is restored before the first render, so the editor never shows defaults first. Without IndexedDB
+// the editor starts from defaults and keeps nothing.
+if (typeof indexedDB === 'undefined') render();
+else
+  void startSession(indexedDbSessionStorage(), { editor: useEditorStore, library: useLibraryStore, settings: useSettingsStore })
+    .catch(() => {})
+    .finally(render);

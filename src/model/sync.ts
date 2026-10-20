@@ -21,6 +21,8 @@ export type SyncEvent =
   | 'edit'
   /** A whole new Working State (an opened Preset, or New): the pedal holds the old one until Send All finishes. */
   | 'load'
+  /** The last session taken up at launch: the pedal may have been changed since. */
+  | 'restore'
   /** A Slot recalled whose Slot Map entry the Working State now is. */
   | 'recallKnown'
   /** A Slot recalled that the Slot Map has no entry for: the pedal now sounds something the editor can't know. */
@@ -51,6 +53,7 @@ export function nextSyncStatus(status: SyncStatus, event: SyncEvent): SyncStatus
     case 'rawMidi':
     case 'midiChannel':
     case 'load':
+    case 'restore':
       // Unknown already trusts nothing.
       return status === 'unknown' ? status : 'possiblyStale';
     case 'edit':
