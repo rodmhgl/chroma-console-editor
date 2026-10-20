@@ -386,7 +386,7 @@ function ImportConflictPrompt() {
   return (
     <section className="library-reminder" role="alertdialog" aria-label="Import conflict">
       <span>
-        “{first.incoming.name}” is already in the Library as “{first.existing.name}”, with different settings.
+        “{first.incoming.name}” is already in the Library as “{first.existing.name}”, with different contents.
       </span>
       {conflicts.length > 1 && (
         <label className="library-apply-all">

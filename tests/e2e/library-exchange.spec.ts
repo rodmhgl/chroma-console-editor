@@ -83,6 +83,7 @@ test.describe('with a Library folder', () => {
     await drawer.getByRole('button', { name: 'Choose folder…' }).click();
 
     await mix.press('PageDown');
+    const ambienceMix = await mix.getAttribute('aria-valuenow');
     await saveAs(page, 'Ambience');
     await presets.getByRole('button', { name: 'Details of Ambience' }).click();
     await presets.getByRole('form', { name: 'Details of Ambience' }).getByLabel('Tags').fill('pad');
@@ -109,10 +110,14 @@ test.describe('with a Library folder', () => {
     await expect(names).toHaveText(['Ambience', 'Echo']);
     await expect(drawer.getByRole('status', { name: 'Import' })).toContainText('2 added');
     await expect(presets.getByRole('list', { name: 'Tags' }).getByRole('listitem')).toHaveText(['pad']);
+    // Each Preset's controls come back too.
+    await drawer.getByRole('button', { name: 'Open Ambience' }).click();
+    await expect(mix).toHaveAttribute('aria-valuenow', ambienceMix!);
 
     // Echo changed since the export: importing again skips Ambience and asks about Echo.
     const workingState = page.getByRole('banner', { name: 'Connection' }).getByLabel('Working State');
     await drawer.getByRole('button', { name: 'Open Echo' }).click();
+    await expect(mix).toHaveAttribute('aria-valuenow', '0');
     await mix.press('End');
     await expect(workingState).toHaveText('Echo •');
     await drawer.getByRole('button', { name: 'Save', exact: true }).click();
