@@ -3,24 +3,28 @@ import { expect, test, type Page } from '@playwright/test';
 // Session restore: reopening the editor brings back the Working State, Snapshot, Slot Map and Settings, Possibly
 // Stale, sending nothing.
 
-/** Runs `change` on the session the editor stored in IndexedDB, resolving the session as it was. */
-const storedSession = (page: Page, change?: string) =>
+/**
+ * The session the editor stored in IndexedDB, as it was before `patch` (if any) was merged into it. Resolves once the
+ * write has committed, so a reload straight after reads it.
+ */
+const storedSession = (page: Page, patch?: Record<string, unknown>) =>
   page.evaluate(
-    (change) =>
+    (patch) =>
       new Promise<Record<string, unknown> | undefined>((resolve, reject) => {
         const open = indexedDB.open('chroma-session');
         open.onerror = () => reject(open.error);
         open.onsuccess = () => {
-          const store = open.result.transaction('session', 'readwrite').objectStore('session');
+          const tx = open.result.transaction('session', 'readwrite');
+          const store = tx.objectStore('session');
           const get = store.get('last');
           get.onsuccess = () => {
-            const session = get.result as Record<string, unknown> | undefined;
-            if (session && change) store.put(new Function('session', `return ${change}`)(session), 'last');
-            resolve(session);
+            if (get.result && patch) store.put({ ...get.result, ...patch }, 'last');
           };
+          tx.oncomplete = () => resolve(get.result);
+          tx.onerror = tx.onabort = () => reject(tx.error);
         };
       }),
-    change,
+    patch,
   );
 
 test('reloading restores the Working State, Snapshot, Slot Map and Settings, Possibly Stale', async ({ page }) => {
@@ -47,7 +51,8 @@ test('reloading restores the Working State, Snapshot, Slot Map and Settings, Pos
 
   // Commit (#18) is the only way the editor fills a Slot, so the Slot Map entry goes straight into what was stored.
   await expect.poll(async () => (await storedSession(page))?.settings).toMatchObject({ theme: 'charcoal', sendGapMs: 12 });
-  await storedSession(page, `({ ...session, slotMap: { 33: { committed: session.working, presetId: null, name: 'Tape Bloom' } } })`);
+  const { working } = (await storedSession(page))!;
+  await storedSession(page, { slotMap: { 33: { committed: working, presetId: null, name: 'Tape Bloom' } } });
 
   await page.reload();
 
